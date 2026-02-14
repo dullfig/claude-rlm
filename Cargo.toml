@@ -1,0 +1,46 @@
+[package]
+name = "claude-rlm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# MCP server
+rmcp = { version = "0.15", features = ["server", "transport-io"] }
+schemars = "1.0"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Database
+rusqlite = { version = "0.33", features = ["bundled", "vtab"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Tree-sitter
+tree-sitter = "0.26"
+tree-sitter-rust = "0.24"
+tree-sitter-python = "0.25"
+tree-sitter-typescript = "0.23"
+tree-sitter-javascript = "0.25"
+tree-sitter-go = "0.25"
+tree-sitter-c = "0.24"
+tree-sitter-cpp = "0.23"
+
+# File watching
+notify = "7"
+
+# HTTP client (for LLM API calls)
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+
+# Utilities
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+ignore = "0.4"
