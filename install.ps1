@@ -65,6 +65,21 @@ function Add-ToPath {
         $env:PATH = "$InstallDir;$env:PATH"
         Write-Ok "Added to PATH (restart your terminal for it to take effect)"
     }
+
+    # Also add to .bashrc for Git Bash (used by Claude Code hooks on Windows)
+    $bashrc = Join-Path $env:USERPROFILE ".bashrc"
+    # Git Bash uses /c/ style paths, not C:/
+    $bashPath = $InstallDir -replace '\\', '/'
+    $driveLetter = $bashPath.Substring(0, 1).ToLower()
+    $bashPath = "/$driveLetter$($bashPath.Substring(2))"
+    $exportLine = "export PATH=`"$bashPath:`$PATH`""
+    if ((Test-Path $bashrc) -and (Get-Content $bashrc -Raw) -match [regex]::Escape("claude-rlm")) {
+        # Already in .bashrc
+    } else {
+        Write-Info "Adding $InstallDir to ~/.bashrc for Git Bash..."
+        Add-Content -Path $bashrc -Value "`n# ClaudeRLM`n$exportLine"
+        Write-Ok "Added to ~/.bashrc"
+    }
 }
 
 # Configure Claude Code hooks
