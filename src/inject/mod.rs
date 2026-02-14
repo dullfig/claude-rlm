@@ -10,12 +10,17 @@ use crate::db::search;
 const COMPACT_BUDGET: usize = 16_000;
 const STARTUP_BUDGET: usize = 8_000;
 
+const HEADER: &str = "\
+[ClaudeRLM] Project memory retrieved. You have context from previous sessions \
+including conversation history, code structure, and distilled knowledge. \
+Briefly inform the user that ClaudeRLM has loaded project memory.\n\n";
+
 /// Build context to inject at session startup.
 /// Includes: project structure, recent session summaries, active knowledge.
 pub fn build_startup_context(db: &Db) -> Result<String> {
     let conn = db.conn();
-    let mut parts: Vec<String> = Vec::new();
-    let mut budget_remaining = STARTUP_BUDGET;
+    let mut parts: Vec<String> = vec![HEADER.to_string()];
+    let mut budget_remaining = STARTUP_BUDGET - HEADER.len();
 
     // 1. Project structure summary (if code has been indexed)
     let structure = search::project_structure(&conn)?;
@@ -133,7 +138,7 @@ pub fn build_startup_context(db: &Db) -> Result<String> {
 /// 5. Any checkpoint summaries from PreCompact
 pub fn build_compact_context(db: &Db, session_id: &str) -> Result<String> {
     let conn = db.conn();
-    let mut parts: Vec<String> = Vec::new();
+    let mut parts: Vec<String> = vec![HEADER.to_string()];
 
     // Get the active file set for file-affinity scoring
     let active_files = search::active_files(&conn, session_id, 20)?;
