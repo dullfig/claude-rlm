@@ -129,17 +129,20 @@ pub fn catchup(db: &Db, project_dir: &Path, session_id: &str) -> Result<CatchupS
     }
 
     // 8. Remove deleted files from file_hashes and symbols
-    let conn = db.conn();
-    for file_name in &deleted {
-        let full_path = project_dir.join(file_name).to_string_lossy().to_string();
-        conn.execute(
-            "DELETE FROM file_hashes WHERE project_dir = ?1 AND file_path = ?2",
-            params![&dir_str, file_name],
-        )?;
-        conn.execute(
-            "DELETE FROM symbols WHERE file_path = ?1",
-            params![&full_path],
-        )?;
+    //    Scoped so conn is dropped before store_all_hashes acquires it
+    {
+        let conn = db.conn();
+        for file_name in &deleted {
+            let full_path = project_dir.join(file_name).to_string_lossy().to_string();
+            conn.execute(
+                "DELETE FROM file_hashes WHERE project_dir = ?1 AND file_path = ?2",
+                params![&dir_str, file_name],
+            )?;
+            conn.execute(
+                "DELETE FROM symbols WHERE file_path = ?1",
+                params![&full_path],
+            )?;
+        }
     }
 
     // 9. Update file_hashes with new hashes
