@@ -111,25 +111,40 @@ Add to your Claude Code MCP settings for explicit search tools:
 
 ### 3. Configure LLM distillation (optional)
 
-For higher-quality knowledge extraction at session end, set an API key:
+For higher-quality knowledge extraction at session end, add your API key to a config file.
 
-```bash
-# Anthropic (recommended -- uses Haiku, ~1 cent per session)
-export CONTEXTMEM_LLM_API_KEY="sk-ant-..."
-
-# Or use a local model via Ollama (free)
-export CONTEXTMEM_LLM_PROVIDER="ollama"
-export CONTEXTMEM_LLM_MODEL="llama3"
+**Project-level** (`.claude/claude-rlm.toml` in your project):
+```toml
+[llm]
+provider = "anthropic"
+api_key = "sk-ant-..."
 ```
 
-Without an API key, ClaudeRLM falls back to heuristic pattern matching for distillation, which still works well for common patterns (technology choices, "always/never" preferences, build tools, test frameworks).
+**Global** (`~/.config/claude-rlm/config.toml` on Linux/macOS, `%APPDATA%\claude-rlm\config.toml` on Windows):
+```toml
+[llm]
+provider = "anthropic"
+api_key = "sk-ant-..."
+model = "claude-haiku-4-5-20251001"   # default, cheapest option
+```
 
-| Variable | Default | Description |
-|---|---|---|
-| `CONTEXTMEM_LLM_API_KEY` | *(none)* | API key (required for cloud, optional for Ollama) |
-| `CONTEXTMEM_LLM_PROVIDER` | `anthropic` | `anthropic`, `openai`, or `ollama` |
-| `CONTEXTMEM_LLM_MODEL` | `claude-haiku-4-5-20251001` | Model name |
-| `CONTEXTMEM_LLM_BASE_URL` | *(provider default)* | Custom endpoint URL |
+**For a local model via Ollama (free):**
+```toml
+[llm]
+provider = "ollama"
+model = "llama3"
+```
+
+Project-level config takes priority over global. Environment variables (`CONTEXTMEM_LLM_*`) are also supported as a fallback.
+
+Without any LLM configured, ClaudeRLM falls back to heuristic pattern matching for distillation, which still works well for common patterns (technology choices, "always/never" preferences, build tools, test frameworks).
+
+| Config key | Env var fallback | Default | Description |
+|---|---|---|---|
+| `llm.api_key` | `CONTEXTMEM_LLM_API_KEY` | *(none)* | API key (required for cloud, optional for Ollama) |
+| `llm.provider` | `CONTEXTMEM_LLM_PROVIDER` | `anthropic` | `anthropic`, `openai`, or `ollama` |
+| `llm.model` | `CONTEXTMEM_LLM_MODEL` | `claude-haiku-4-5-20251001` | Model name |
+| `llm.base_url` | `CONTEXTMEM_LLM_BASE_URL` | *(provider default)* | Custom endpoint URL |
 
 ## What gets indexed
 

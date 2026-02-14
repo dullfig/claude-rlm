@@ -1,13 +1,23 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
-/// LLM provider configuration, loaded from environment variables.
+/// LLM provider configuration.
 ///
-/// Environment variables:
-///   CONTEXTMEM_LLM_PROVIDER  - "anthropic" or "openai" (default: "anthropic")
-///   CONTEXTMEM_LLM_API_KEY   - API key (required for cloud providers, optional for local)
-///   CONTEXTMEM_LLM_MODEL     - Model name (default: provider-specific)
-///   CONTEXTMEM_LLM_BASE_URL  - Base URL override (for Ollama, OpenRouter, etc.)
+/// Loaded from config file first, then environment variables as fallback.
+///
+/// Config file locations (checked in order):
+///   1. <project_dir>/.claude/claude-rlm.toml   (project-level)
+///   2. ~/.config/claude-rlm/config.toml         (global, Linux/macOS)
+///      %APPDATA%\claude-rlm\config.toml         (global, Windows)
+///   3. Environment variables (CONTEXTMEM_LLM_*)
+///
+/// Config format:
+///   [llm]
+///   provider = "anthropic"       # or "openai", "ollama"
+///   api_key = "sk-ant-..."
+///   model = "claude-haiku-4-5-20251001"
+///   base_url = "https://api.anthropic.com"
 #[derive(Debug, Clone)]
 pub struct LlmConfig {
     pub provider: Provider,
@@ -22,13 +32,33 @@ pub enum Provider {
     OpenAICompat,
 }
 
+/// The [llm] section of the config file.
+#[derive(Debug, Deserialize, Default)]
+struct FileConfig {
+    #[serde(default)]
+    llm: LlmFileConfig,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct LlmFileConfig {
+    provider: Option<String>,
+    api_key: Option<String>,
+    model: Option<String>,
+    base_url: Option<String>,
+}
+
 impl LlmConfig {
-    /// Load configuration from environment variables.
-    /// Returns None if no LLM is configured (no API key and no local endpoint).
+    /// Load configuration from config file, falling back to environment variables.
+    /// Returns None if no LLM is configured.
     pub fn from_env() -> Option<Self> {
-        let api_key = std::env::var("CONTEXTMEM_LLM_API_KEY").ok();
-        let provider_str = std::env::var("CONTEXTMEM_LLM_PROVIDER")
-            .unwrap_or_else(|_| "anthropic".to_string());
+        let file_cfg = load_config_file().unwrap_or_default();
+
+        let api_key = file_cfg.llm.api_key
+            .or_else(|| std::env::var("CONTEXTMEM_LLM_API_KEY").ok());
+
+        let provider_str = file_cfg.llm.provider
+            .or_else(|| std::env::var("CONTEXTMEM_LLM_PROVIDER").ok())
+            .unwrap_or_else(|| "anthropic".to_string());
 
         let provider = match provider_str.to_lowercase().as_str() {
             "openai" | "ollama" | "openrouter" => Provider::OpenAICompat,
@@ -46,8 +76,13 @@ impl LlmConfig {
             ),
         };
 
-        let model = std::env::var("CONTEXTMEM_LLM_MODEL").unwrap_or(default_model);
-        let base_url = std::env::var("CONTEXTMEM_LLM_BASE_URL").unwrap_or(default_url);
+        let model = file_cfg.llm.model
+            .or_else(|| std::env::var("CONTEXTMEM_LLM_MODEL").ok())
+            .unwrap_or(default_model);
+
+        let base_url = file_cfg.llm.base_url
+            .or_else(|| std::env::var("CONTEXTMEM_LLM_BASE_URL").ok())
+            .unwrap_or(default_url);
 
         // For Anthropic, require an API key
         // For OpenAI-compat (Ollama), API key is optional (local)
@@ -74,7 +109,7 @@ impl LlmConfig {
     /// Call the Anthropic Messages API.
     fn complete_anthropic(&self, system: &str, user_message: &str) -> Result<String> {
         let api_key = self.api_key.as_deref()
-            .ok_or_else(|| anyhow!("CONTEXTMEM_LLM_API_KEY required for Anthropic provider"))?;
+            .ok_or_else(|| anyhow!("api_key required for Anthropic provider"))?;
 
         let client = reqwest::blocking::Client::new();
         let url = format!("{}/v1/messages", self.base_url);
@@ -117,7 +152,6 @@ impl LlmConfig {
         let client = reqwest::blocking::Client::new();
 
         // Ollama uses /api/chat, but most OpenAI-compat use /v1/chat/completions
-        // Detect Ollama by checking if base_url contains localhost:11434
         let url = if self.base_url.contains("localhost:11434")
             || self.base_url.contains("127.0.0.1:11434")
         {
@@ -158,7 +192,6 @@ impl LlmConfig {
             return Err(anyhow!("OpenAI-compat API error {}: {}", status, body));
         }
 
-        // Ollama returns a slightly different format, but both have choices[0].message.content
         let resp: OpenAIResponse = resp.json()?;
         resp.choices
             .into_iter()
@@ -166,6 +199,45 @@ impl LlmConfig {
             .map(|c| c.message.content)
             .ok_or_else(|| anyhow!("No choices in OpenAI-compat response"))
     }
+}
+
+/// Load config from file. Checks project-level, then global.
+fn load_config_file() -> Option<FileConfig> {
+    let candidates = config_file_paths();
+    for path in candidates {
+        if let Ok(contents) = std::fs::read_to_string(&path) {
+            match toml::from_str(&contents) {
+                Ok(cfg) => return Some(cfg),
+                Err(e) => {
+                    eprintln!("[claude-rlm] Warning: failed to parse {}: {}", path.display(), e);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Return candidate config file paths in priority order.
+fn config_file_paths() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+
+    // 1. Project-level: <cwd>/.claude/claude-rlm.toml
+    if let Ok(cwd) = std::env::current_dir() {
+        paths.push(cwd.join(".claude").join("claude-rlm.toml"));
+    }
+
+    // 2. Global config
+    if cfg!(windows) {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            paths.push(PathBuf::from(appdata).join("claude-rlm").join("config.toml"));
+        }
+    } else {
+        if let Ok(home) = std::env::var("HOME") {
+            paths.push(PathBuf::from(home).join(".config").join("claude-rlm").join("config.toml"));
+        }
+    }
+
+    paths
 }
 
 // --- Anthropic API types ---
