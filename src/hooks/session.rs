@@ -58,6 +58,33 @@ pub fn handle_start(input: &HookInput) -> Result<()> {
         _ => inject::build_startup_context(&db)?,
     };
 
+    // Print startup banner with quick stats
+    if source == "startup" {
+        let conn = db.conn();
+        let sessions: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM sessions WHERE ended_at IS NOT NULL",
+            [], |row| row.get(0)
+        ).unwrap_or(0);
+        let symbols: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM symbols", [], |row| row.get(0)
+        ).unwrap_or(0);
+        let knowledge: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM knowledge WHERE superseded_by IS NULL",
+            [], |row| row.get(0)
+        ).unwrap_or(0);
+
+        let mut parts = Vec::new();
+        if sessions > 0 { parts.push(format!("{} sessions", sessions)); }
+        if symbols > 0 { parts.push(format!("{} symbols", symbols)); }
+        if knowledge > 0 { parts.push(format!("{} knowledge", knowledge)); }
+
+        if parts.is_empty() {
+            eprintln!("[ClaudeRLM] Project memory initialized");
+        } else {
+            eprintln!("[ClaudeRLM] Project memory loaded ({})", parts.join(", "));
+        }
+    }
+
     if !context.is_empty() {
         // Output as JSON for Claude Code to consume as additionalContext
         let output = json!({
