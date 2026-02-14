@@ -78,7 +78,28 @@ pub fn build_startup_context(db: &Db) -> Result<String> {
         parts.push(section);
     }
 
-    // 3. Active knowledge (decisions, conventions, preferences)
+    // 3. Recent git/file catch-up (if from this session start, within last 30 seconds)
+    {
+        let mut stmt = conn.prepare(
+            "SELECT content FROM turns
+             WHERE turn_type IN ('git_catchup', 'file_catchup')
+               AND timestamp >= datetime('now', '-30 seconds')
+             ORDER BY timestamp DESC
+             LIMIT 1",
+        )?;
+
+        let catchup: Option<String> = stmt
+            .query_row([], |row| row.get(0))
+            .ok();
+
+        if let Some(content) = catchup {
+            let section = format!("## Recent Git Changes\n{}\n", truncate(&content, 800));
+            budget_remaining = budget_remaining.saturating_sub(section.len());
+            parts.push(section);
+        }
+    }
+
+    // 4. Active knowledge (decisions, conventions, preferences)
     let knowledge_categories = [
         "decision",
         "preference",

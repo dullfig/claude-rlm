@@ -11,6 +11,8 @@ pub fn type_weight(turn_type: &str) -> f64 {
     match turn_type {
         "decision" => 1.5,
         "checkpoint" => 1.4,
+        "git_catchup" => 1.3,
+        "file_catchup" => 1.3,
         "request" => 1.3,
         "code_edit" => 1.2,
         "explanation" => 1.0,
@@ -144,6 +146,8 @@ pub fn ranked_select(
 /// Format a turn for injection into context.
 fn format_turn_for_injection(turn: &TurnSearchResult) -> String {
     let type_label = match turn.turn_type.as_str() {
+        "git_catchup" => "Git",
+        "file_catchup" => "Files",
         "request" => "User",
         "code_edit" => "Edit",
         "file_read" => "Read",

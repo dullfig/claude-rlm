@@ -3,7 +3,7 @@ use serde_json::json;
 
 use crate::db::Db;
 use crate::hooks::{self, HookInput};
-use crate::indexer::{code, conversation, distill};
+use crate::indexer::{code, conversation, distill, files, git};
 use crate::inject;
 
 /// Handle SessionStart hook.
@@ -16,6 +16,34 @@ pub fn handle_start(input: &HookInput) -> Result<()> {
 
     let db = Db::open(std::path::Path::new(&project_dir))?;
     conversation::ensure_session(&db, &session_id, &project_dir)?;
+
+    // Catch up on git changes since last session
+    if source == "startup" {
+        match git::catchup(&db, std::path::Path::new(&project_dir), &session_id) {
+            Ok(stats) if stats.commits > 0 => {
+                eprintln!(
+                    "[claude-rlm] Git catch-up: {} commits, {} files changed",
+                    stats.commits, stats.files_changed
+                );
+            }
+            Err(e) => eprintln!("[claude-rlm] Git catch-up skipped: {}", e),
+            _ => {}
+        }
+    }
+
+    // File-hash catch-up for non-git projects
+    if source == "startup" && !git::is_git_repo(std::path::Path::new(&project_dir)) {
+        match files::catchup(&db, std::path::Path::new(&project_dir), &session_id) {
+            Ok(stats) if stats.files_changed + stats.files_added + stats.files_deleted > 0 => {
+                eprintln!(
+                    "[claude-rlm] File catch-up: {} changed, {} added, {} deleted",
+                    stats.files_changed, stats.files_added, stats.files_deleted
+                );
+            }
+            Err(e) => eprintln!("[claude-rlm] File catch-up failed: {}", e),
+            _ => {}
+        }
+    }
 
     // On startup, run initial code indexing if no index exists
     if source == "startup" && !code::has_index(&db)? {

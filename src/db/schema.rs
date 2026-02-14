@@ -85,6 +85,22 @@ pub fn create_tables(conn: &Connection) -> Result<()> {
             PRIMARY KEY (from_symbol_id, to_symbol_id, ref_type)
         );
 
+        -- Git state tracking (for session-start catch-up)
+        CREATE TABLE IF NOT EXISTS git_state (
+            project_dir TEXT PRIMARY KEY,
+            last_commit_hash TEXT NOT NULL,
+            updated_at TEXT DEFAULT (datetime('now'))
+        );
+
+        -- File content hashes (for non-git catch-up)
+        CREATE TABLE IF NOT EXISTS file_hashes (
+            project_dir TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            content_hash TEXT NOT NULL,
+            updated_at TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (project_dir, file_path)
+        );
+
         -- Distilled knowledge (Phase 4, but create table now)
         CREATE TABLE IF NOT EXISTS knowledge (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
