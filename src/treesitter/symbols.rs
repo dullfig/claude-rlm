@@ -138,7 +138,8 @@ fn extract_signature(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
     } else {
         // Limit length
         Some(if sig.len() > 200 {
-            format!("{}...", &sig[..200])
+            let end = sig.floor_char_boundary(200);
+            format!("{}...", &sig[..end])
         } else {
             sig.to_string()
         })
@@ -173,7 +174,8 @@ fn extract_doc_comment(node: tree_sitter::Node, source: &[u8]) -> Option<String>
 
     // Limit length
     Some(if doc.len() > 500 {
-        format!("{}...", &doc[..500])
+        let end = doc.floor_char_boundary(500);
+        format!("{}...", &doc[..end])
     } else {
         doc
     })

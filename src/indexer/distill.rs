@@ -453,7 +453,7 @@ fn extract_preference_subject(text: &str) -> String {
             let after = &text[pos + keyword.len()..];
             let end = after
                 .find(|c: char| c == '.' || c == ',' || c == '!' || c == '\n')
-                .unwrap_or(after.len().min(50));
+                .unwrap_or_else(|| after.floor_char_boundary(after.len().min(50)));
             let phrase = after[..end].trim();
             if !phrase.is_empty() {
                 return format!("user preference: {}", truncate(phrase, 60));
@@ -467,7 +467,8 @@ fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()
     } else {
-        format!("{}...", &s[..max])
+        let end = s.floor_char_boundary(max);
+        format!("{}...", &s[..end])
     }
 }
 

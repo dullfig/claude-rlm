@@ -142,7 +142,7 @@ fn run_status() -> Result<()> {
             let sig: Option<String> = row.get(4)?;
             let sig_str = sig.map(|s| {
                 let s = s.replace('\n', " ");
-                if s.len() > 60 { format!("{}...", &s[..60]) } else { s }
+                if s.len() > 60 { let e = s.floor_char_boundary(60); format!("{}...", &s[..e]) } else { s }
             }).unwrap_or_default();
             Ok(format!(
                 "  {} `{}` at {}:{} {}",
@@ -178,7 +178,7 @@ fn run_status() -> Result<()> {
                 row.get::<_, f64>(3)? * 100.0,
                 {
                     let c: String = row.get(2)?;
-                    if c.len() > 80 { format!("{}...", &c[..80]) } else { c }
+                    if c.len() > 80 { let e = c.floor_char_boundary(80); format!("{}...", &c[..e]) } else { c }
                 },
             ))
         })?
@@ -250,13 +250,22 @@ async fn run_server() -> Result<()> {
     Ok(())
 }
 
-/// Run a hook handler, catching and logging errors.
+/// Run a hook handler, catching errors and panics.
 fn run_hook(f: impl FnOnce() -> Result<()>) -> Result<()> {
-    match f() {
-        Ok(()) => Ok(()),
-        Err(e) => {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(e)) => {
             eprintln!("[claude-rlm] Hook error: {}", e);
             // Don't fail the hook — return Ok so Claude Code continues
+            Ok(())
+        }
+        Err(panic) => {
+            let msg = panic
+                .downcast_ref::<String>()
+                .map(|s| s.as_str())
+                .or_else(|| panic.downcast_ref::<&str>().copied())
+                .unwrap_or("unknown panic");
+            eprintln!("[claude-rlm] Hook panicked: {}", msg);
             Ok(())
         }
     }

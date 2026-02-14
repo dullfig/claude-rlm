@@ -131,7 +131,8 @@ impl ClaudeRlmServer {
                 output.push_str(&format!("Files: {}\n", r.files.join(", ")));
             }
             let content = if r.content.len() > 1000 {
-                format!("{}...", &r.content[..1000])
+                let end = r.content.floor_char_boundary(1000);
+                format!("{}...", &r.content[..end])
             } else {
                 r.content.clone()
             };
@@ -229,7 +230,8 @@ impl ClaudeRlmServer {
         let mut output = String::from("## File History\n\n");
         for r in &result {
             let content = if r.content.len() > 500 {
-                format!("{}...", &r.content[..500])
+                let end = r.content.floor_char_boundary(500);
+                format!("{}...", &r.content[..end])
             } else {
                 r.content.clone()
             };

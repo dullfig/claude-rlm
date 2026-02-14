@@ -61,9 +61,10 @@ pub fn build_startup_context(db: &Db) -> Result<String> {
         for s in &sessions {
             let summary = s.summary.as_deref().unwrap_or("(no summary)");
             let ended = s.ended_at.as_deref().unwrap_or("(in progress)");
+            let id_end = s.id.floor_char_boundary(8.min(s.id.len()));
             let entry = format!(
                 "- {} (started: {}, ended: {}): {}\n",
-                &s.id[..8.min(s.id.len())],
+                &s.id[..id_end],
                 s.started_at,
                 ended,
                 truncate(summary, 200)
@@ -213,7 +214,8 @@ fn truncate(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()
     } else {
-        format!("{}...", &s[..max])
+        let end = s.floor_char_boundary(max);
+        format!("{}...", &s[..end])
     }
 }
 

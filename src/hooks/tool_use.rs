@@ -110,7 +110,7 @@ pub fn handle_bash(input: &HookInput) -> Result<()> {
         .unwrap_or("");
 
     let truncated_output = if output.len() > 2000 {
-        &output[..2000]
+        &output[..output.floor_char_boundary(2000)]
     } else {
         output
     };
@@ -170,6 +170,7 @@ fn truncate_str(s: &str, max: usize) -> String {
     if s.len() <= max {
         s.to_string()
     } else {
-        format!("{}...[truncated]", &s[..max])
+        let end = s.floor_char_boundary(max);
+        format!("{}...[truncated]", &s[..end])
     }
 }

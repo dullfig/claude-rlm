@@ -108,7 +108,8 @@ fn generate_session_summary(db: &Db, session_id: &str) -> Result<Option<String>>
     let mut summary = String::from("User requests:\n");
     for (i, req) in requests.iter().enumerate() {
         let truncated = if req.len() > 200 {
-            format!("{}...", &req[..200])
+            let end = req.floor_char_boundary(200);
+            format!("{}...", &req[..end])
         } else {
             req.clone()
         };

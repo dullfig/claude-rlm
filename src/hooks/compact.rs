@@ -99,7 +99,8 @@ fn generate_checkpoint_summary(db: &Db, session_id: &str) -> Result<()> {
     summary.push_str("Tasks:\n");
     for (i, req) in requests.iter().enumerate() {
         let truncated = if req.len() > 200 {
-            format!("{}...", &req[..200])
+            let end = req.floor_char_boundary(200);
+            format!("{}...", &req[..end])
         } else {
             req.clone()
         };
@@ -117,7 +118,8 @@ fn generate_checkpoint_summary(db: &Db, session_id: &str) -> Result<()> {
         summary.push_str("\nRecent edits:\n");
         for edit in recent_edits.iter().rev() {
             let truncated = if edit.len() > 300 {
-                format!("{}...", &edit[..300])
+                let end = edit.floor_char_boundary(300);
+                format!("{}...", &edit[..end])
             } else {
                 edit.clone()
             };

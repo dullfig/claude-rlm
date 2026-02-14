@@ -163,7 +163,8 @@ fn format_turn_for_injection(turn: &TurnSearchResult) -> String {
 
     // Truncate content for injection (individual turns shouldn't dominate)
     let content = if turn.content.len() > 800 {
-        format!("{}...", &turn.content[..800])
+        let end = turn.content.floor_char_boundary(800);
+        format!("{}...", &turn.content[..end])
     } else {
         turn.content.clone()
     };
