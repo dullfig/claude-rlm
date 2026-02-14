@@ -50,6 +50,12 @@ enum Commands {
 
     /// Show index status and statistics
     Status,
+
+    /// Disable all hooks (emergency kill switch)
+    Disable,
+
+    /// Re-enable hooks after disable
+    Enable,
 }
 
 #[tokio::main]
@@ -87,6 +93,8 @@ async fn main() -> Result<()> {
             hooks::session::handle_end(&input)
         }),
         Some(Commands::Status) => run_status(),
+        Some(Commands::Disable) => run_disable(),
+        Some(Commands::Enable) => run_enable(),
     }
 }
 
@@ -112,6 +120,11 @@ fn run_status() -> Result<()> {
 
     println!("ClaudeRLM Status");
     println!("=================");
+    if is_disabled() {
+        println!("State:     DISABLED (run `claude-rlm enable` to re-enable)");
+    } else {
+        println!("State:     enabled");
+    }
     println!("Sessions:  {}", session_count);
     println!("Turns:     {}", turn_count);
     println!("Knowledge: {}", knowledge_count);
@@ -250,8 +263,46 @@ async fn run_server() -> Result<()> {
     Ok(())
 }
 
+/// Path to the disable flag file.
+fn disable_flag_path() -> std::path::PathBuf {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| ".".to_string());
+    std::path::Path::new(&home).join(".claude-rlm-disabled")
+}
+
+/// Check if claude-rlm is disabled.
+fn is_disabled() -> bool {
+    disable_flag_path().exists()
+}
+
+/// Disable all hooks.
+fn run_disable() -> Result<()> {
+    let path = disable_flag_path();
+    std::fs::write(&path, "disabled\n")?;
+    eprintln!("claude-rlm disabled. All hooks will be skipped.");
+    eprintln!("Run `claude-rlm enable` to re-enable.");
+    Ok(())
+}
+
+/// Re-enable hooks.
+fn run_enable() -> Result<()> {
+    let path = disable_flag_path();
+    if path.exists() {
+        std::fs::remove_file(&path)?;
+        eprintln!("claude-rlm enabled. Hooks are active again.");
+    } else {
+        eprintln!("claude-rlm is already enabled.");
+    }
+    Ok(())
+}
+
 /// Run a hook handler, catching errors and panics.
 fn run_hook(f: impl FnOnce() -> Result<()>) -> Result<()> {
+    if is_disabled() {
+        return Ok(());
+    }
+
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
         Ok(Ok(())) => Ok(()),
         Ok(Err(e)) => {
