@@ -5,8 +5,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/bootstrap && ${CLAUDE_PLUGIN_ROOT}/bin/claude-rlm session-start",
-            "timeout": 30
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/claude-rlm session-start",
+            "timeout": 10
           }
         ]
       }
