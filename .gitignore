@@ -5,6 +5,9 @@
 *.pdf
 .claude/
 
+# Cloned marketplace repo (not part of this project)
+/claude-plugins/
+
 # Plugin runtime binary (downloaded by bootstrap)
 /bin/claude-rlm
 /bin/claude-rlm.exe

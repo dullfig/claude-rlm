@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# DEPRECATED: Use the Claude Code plugin instead:
+#   /plugin install claude-rlm@dullfig-plugins
+# This standalone installer will be removed in a future version.
+
 # ClaudeRLM installer for Linux and macOS
 # Usage: curl -fsSL https://raw.githubusercontent.com/dullfig/claude-rlm/main/install.sh | bash
 

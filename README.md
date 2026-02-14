@@ -64,7 +64,7 @@ irm https://raw.githubusercontent.com/dullfig/claude-rlm/main/install.ps1 | iex
 cargo install --git https://github.com/dullfig/claude-rlm.git
 ```
 
-If you install manually, you'll need to configure hooks yourself. See `hooks.example.json` and use **absolute paths** to the binary — Claude Code spawns hook subprocesses without inheriting your shell PATH.
+If you install manually, you'll need to configure hooks yourself (see Manual hook setup below). Use **absolute paths** to the binary — Claude Code spawns hook subprocesses without inheriting your shell PATH.
 
 ### Migrating from manual install to plugin
 

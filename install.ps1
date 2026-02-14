@@ -1,3 +1,7 @@
+# DEPRECATED: Use the Claude Code plugin instead:
+#   /plugin install claude-rlm@dullfig-plugins
+# This standalone installer will be removed in a future version.
+
 # ClaudeRLM installer for Windows
 # Usage: irm https://raw.githubusercontent.com/dullfig/claude-rlm/main/install.ps1 | iex
 
