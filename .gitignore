@@ -4,3 +4,8 @@
 *.db-shm
 *.pdf
 .claude/
+
+# Plugin runtime binary (downloaded by bootstrap)
+/bin/claude-rlm
+/bin/claude-rlm.exe
+/bin/.version

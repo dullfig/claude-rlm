@@ -26,9 +26,28 @@ In practice, Claude Code [hooks](https://docs.anthropic.com/en/docs/claude-code/
 - **4 MCP tools** for explicit search when needed: `memory_search`, `memory_symbols`, `memory_decisions`, `memory_files`
 - **Cross-session memory** -- knowledge persists and is injected at the start of every new session
 
-## Quick install
+## Install
 
-The installer downloads the binary, adds it to your PATH, and configures Claude Code hooks automatically.
+### Plugin install (recommended)
+
+Install as a Claude Code plugin for one-command setup with automatic binary management:
+
+```
+/plugin install claude-rlm@dullfig-plugins
+```
+
+The binary is downloaded automatically on first session start. No PATH configuration needed.
+
+To update, delete the cached binary and restart:
+
+```bash
+rm -f <plugin-dir>/bin/claude-rlm    # Unix
+del <plugin-dir>\bin\claude-rlm.exe  # Windows
+```
+
+### Manual install
+
+If you prefer not to use the plugin system, standalone installers are still available:
 
 **Linux / macOS:**
 ```bash
@@ -45,56 +64,64 @@ irm https://raw.githubusercontent.com/dullfig/claude-rlm/main/install.ps1 | iex
 cargo install --git https://github.com/dullfig/claude-rlm.git
 ```
 
-If you install from source, you'll need to configure hooks manually (see below).
+If you install manually, you'll need to configure hooks yourself. See `hooks.example.json` and use **absolute paths** to the binary — Claude Code spawns hook subprocesses without inheriting your shell PATH.
 
-## Manual setup
+### Migrating from manual install to plugin
 
-### 1. Configure hooks
+1. Install the plugin: `/plugin install claude-rlm@dullfig-plugins`
+2. Remove old hooks from `~/.claude/settings.json` (any entries referencing `claude-rlm`)
+3. Optionally remove the old binary from `~/.local/bin/claude-rlm` or `%LOCALAPPDATA%\Programs\claude-rlm\`
 
-Copy `hooks.example.json` into your project's `.claude/settings.json` (or merge into your existing settings):
+Your existing database (`.claude/claude-rlm.db`) is preserved — all your indexed memory carries over.
+
+## Manual hook setup
+
+If you installed manually, copy `hooks.example.json` into your project's `.claude/settings.json` (or merge into your existing settings).
+
+**Important:** Use the absolute path to `claude-rlm` in hook commands. Replace `/path/to/claude-rlm` with the actual install location (e.g., `~/.local/bin/claude-rlm` on Linux/macOS, `C:/Users/YOU/AppData/Local/Programs/claude-rlm/claude-rlm.exe` on Windows):
 
 ```json
 {
   "hooks": {
     "UserPromptSubmit": [
       {
-        "hooks": [{ "type": "command", "command": "claude-rlm index-prompt", "timeout": 5 }]
+        "hooks": [{ "type": "command", "command": "/path/to/claude-rlm index-prompt", "timeout": 5 }]
       }
     ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
-        "hooks": [{ "type": "command", "command": "claude-rlm index-edit", "timeout": 5 }]
+        "hooks": [{ "type": "command", "command": "/path/to/claude-rlm index-edit", "timeout": 5 }]
       },
       {
         "matcher": "Read",
-        "hooks": [{ "type": "command", "command": "claude-rlm index-read", "timeout": 2 }]
+        "hooks": [{ "type": "command", "command": "/path/to/claude-rlm index-read", "timeout": 2 }]
       },
       {
         "matcher": "Bash",
-        "hooks": [{ "type": "command", "command": "claude-rlm index-bash", "timeout": 2 }]
+        "hooks": [{ "type": "command", "command": "/path/to/claude-rlm index-bash", "timeout": 2 }]
       }
     ],
     "PreCompact": [
       {
-        "hooks": [{ "type": "command", "command": "claude-rlm pre-compact", "timeout": 10 }]
+        "hooks": [{ "type": "command", "command": "/path/to/claude-rlm pre-compact", "timeout": 10 }]
       }
     ],
     "SessionStart": [
       {
-        "hooks": [{ "type": "command", "command": "claude-rlm session-start", "timeout": 10 }]
+        "hooks": [{ "type": "command", "command": "/path/to/claude-rlm session-start", "timeout": 10 }]
       }
     ],
     "SessionEnd": [
       {
-        "hooks": [{ "type": "command", "command": "claude-rlm session-end", "timeout": 30 }]
+        "hooks": [{ "type": "command", "command": "/path/to/claude-rlm session-end", "timeout": 30 }]
       }
     ]
   }
 }
 ```
 
-### 2. Configure MCP server (optional)
+## MCP server (optional)
 
 Add to your Claude Code MCP settings for explicit search tools:
 
@@ -109,7 +136,9 @@ Add to your Claude Code MCP settings for explicit search tools:
 }
 ```
 
-### 3. Configure LLM distillation (optional)
+Plugin users get this automatically via the plugin's `.mcp.json`.
+
+## LLM distillation (optional)
 
 For higher-quality knowledge extraction at session end, add your API key to a config file.
 
@@ -180,6 +209,7 @@ This creates/removes a `~/.claude-rlm-disabled` flag file. No Claude session nee
 ```
 claude-rlm serve          # Start MCP server (default)
 claude-rlm status         # Show index statistics
+claude-rlm --version      # Show version
 claude-rlm disable        # Disable all hooks (emergency kill switch)
 claude-rlm enable         # Re-enable hooks
 claude-rlm index-prompt   # Hook: index user prompt (stdin)

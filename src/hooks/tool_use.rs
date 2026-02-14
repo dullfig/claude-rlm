@@ -102,12 +102,17 @@ pub fn handle_bash(input: &HookInput) -> Result<()> {
         .and_then(|v| v.as_str())
         .unwrap_or("[unknown command]");
 
-    // Truncate long outputs
+    // Extract output: tool_response can be a string or {"stdout": "...", ...}
     let output = input
         .tool_response
         .as_ref()
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+        .and_then(|v| {
+            v.as_str()
+                .map(|s| s.to_string())
+                .or_else(|| v.get("stdout").and_then(|s| s.as_str()).map(|s| s.to_string()))
+        })
+        .unwrap_or_default();
+    let output = output.as_str();
 
     let truncated_output = if output.len() > 2000 {
         &output[..output.floor_char_boundary(2000)]

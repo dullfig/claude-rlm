@@ -12,7 +12,7 @@ use clap::{Parser, Subcommand};
 use rmcp::ServiceExt;
 
 #[derive(Parser)]
-#[command(name = "claude-rlm", about = "Persistent project memory for Claude Code")]
+#[command(name = "claude-rlm", about = "Persistent project memory for Claude Code", version)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,

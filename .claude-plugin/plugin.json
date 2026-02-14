@@ -1,0 +1,7 @@
+{
+  "name": "claude-rlm",
+  "version": "0.2.0",
+  "description": "Persistent project memory for Claude Code",
+  "author": { "name": "dullfig" },
+  "homepage": "https://github.com/dullfig/claude-rlm"
+}

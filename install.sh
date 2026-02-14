@@ -100,43 +100,46 @@ configure_hooks() {
 
     info "Configuring Claude Code hooks..."
 
+    # Use absolute path — Claude Code's hook subprocess doesn't inherit the user's shell PATH
+    local exe="${INSTALL_DIR}/${BINARY}"
+
     # Build the hooks JSON
     local hooks_json
-    hooks_json=$(cat <<'HOOKS_EOF'
+    hooks_json=$(cat <<HOOKS_EOF
 {
   "hooks": {
     "UserPromptSubmit": [
       {
-        "hooks": [{ "type": "command", "command": "claude-rlm index-prompt", "timeout": 5 }]
+        "hooks": [{ "type": "command", "command": "${exe} index-prompt", "timeout": 5 }]
       }
     ],
     "PostToolUse": [
       {
         "matcher": "Edit|Write",
-        "hooks": [{ "type": "command", "command": "claude-rlm index-edit", "timeout": 5 }]
+        "hooks": [{ "type": "command", "command": "${exe} index-edit", "timeout": 5 }]
       },
       {
         "matcher": "Read",
-        "hooks": [{ "type": "command", "command": "claude-rlm index-read", "timeout": 2 }]
+        "hooks": [{ "type": "command", "command": "${exe} index-read", "timeout": 2 }]
       },
       {
         "matcher": "Bash",
-        "hooks": [{ "type": "command", "command": "claude-rlm index-bash", "timeout": 2 }]
+        "hooks": [{ "type": "command", "command": "${exe} index-bash", "timeout": 2 }]
       }
     ],
     "PreCompact": [
       {
-        "hooks": [{ "type": "command", "command": "claude-rlm pre-compact", "timeout": 10 }]
+        "hooks": [{ "type": "command", "command": "${exe} pre-compact", "timeout": 10 }]
       }
     ],
     "SessionStart": [
       {
-        "hooks": [{ "type": "command", "command": "claude-rlm session-start", "timeout": 10 }]
+        "hooks": [{ "type": "command", "command": "${exe} session-start", "timeout": 10 }]
       }
     ],
     "SessionEnd": [
       {
-        "hooks": [{ "type": "command", "command": "claude-rlm session-end", "timeout": 30 }]
+        "hooks": [{ "type": "command", "command": "${exe} session-end", "timeout": 30 }]
       }
     ]
   }
