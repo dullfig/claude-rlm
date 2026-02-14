@@ -2,6 +2,7 @@
 name = "claude-rlm"
 version = "0.2.0"
 edition = "2021"
+license = "BUSL-1.1"
 
 [dependencies]
 # MCP server

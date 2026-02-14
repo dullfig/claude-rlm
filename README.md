@@ -231,4 +231,4 @@ Rust, Python, TypeScript, TSX, JavaScript, Go, C, C++
 
 ## License
 
-MIT
+Business Source License 1.1 (BSL 1.1). Free for all use including production, except offering it as a competing commercial hosted service. Converts to Apache 2.0 on February 14, 2029. See [LICENSE](LICENSE) for details.
