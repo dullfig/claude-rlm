@@ -1,0 +1,8 @@
+#!/bin/sh
+# MCP server launcher — ensures binary exists, then starts the server
+PLUGIN_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Bootstrap the binary if missing
+"$PLUGIN_ROOT/scripts/bootstrap"
+
+exec "$PLUGIN_ROOT/bin/claude-rlm" serve

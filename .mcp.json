@@ -1,6 +1,6 @@
 {
   "claude-rlm": {
-    "command": "${CLAUDE_PLUGIN_ROOT}/bin/claude-rlm",
-    "args": ["serve"]
+    "command": "${CLAUDE_PLUGIN_ROOT}/bin/claude-rlm-serve",
+    "args": []
   }
 }
