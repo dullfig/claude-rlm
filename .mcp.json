@@ -1,6 +1,8 @@
 {
-  "claude-rlm": {
-    "command": "${CLAUDE_PLUGIN_ROOT}/bin/claude-rlm-serve",
-    "args": []
+  "mcpServers": {
+    "claude-rlm": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/claude-rlm-serve",
+      "args": []
+    }
   }
 }
