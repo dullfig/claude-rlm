@@ -134,7 +134,7 @@ configure_hooks() {
         "hooks": [{ "type": "command", "command": "claude-rlm session-start", "timeout": 10 }]
       }
     ],
-    "Stop": [
+    "SessionEnd": [
       {
         "hooks": [{ "type": "command", "command": "claude-rlm session-end", "timeout": 30 }]
       }

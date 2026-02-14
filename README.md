@@ -85,7 +85,7 @@ Copy `hooks.example.json` into your project's `.claude/settings.json` (or merge 
         "hooks": [{ "type": "command", "command": "claude-rlm session-start", "timeout": 10 }]
       }
     ],
-    "Stop": [
+    "SessionEnd": [
       {
         "hooks": [{ "type": "command", "command": "claude-rlm session-end", "timeout": 30 }]
       }
