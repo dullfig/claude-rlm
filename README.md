@@ -163,11 +163,25 @@ Without any LLM configured, ClaudeRLM falls back to heuristic pattern matching f
 
 **After compaction:** checkpoint summaries, all user requests from the session, active file list, then the highest-ranked remaining turns up to a 16K character budget.
 
+## Disable / enable (kill switch)
+
+If something goes wrong and ClaudeRLM is interfering with your session, disable it from any terminal:
+
+```bash
+claude-rlm disable        # All hooks silently exit, Claude Code works normally
+claude-rlm enable         # Re-enable hooks
+claude-rlm status         # Shows DISABLED/enabled state
+```
+
+This creates/removes a `~/.claude-rlm-disabled` flag file. No Claude session needed -- just open a terminal and type the command.
+
 ## CLI commands
 
 ```
 claude-rlm serve          # Start MCP server (default)
 claude-rlm status         # Show index statistics
+claude-rlm disable        # Disable all hooks (emergency kill switch)
+claude-rlm enable         # Re-enable hooks
 claude-rlm index-prompt   # Hook: index user prompt (stdin)
 claude-rlm index-edit     # Hook: index code edit (stdin)
 claude-rlm index-read     # Hook: index file read (stdin)
