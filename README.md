@@ -26,18 +26,28 @@ In practice, Claude Code [hooks](https://docs.anthropic.com/en/docs/claude-code/
 - **4 MCP tools** for explicit search when needed: `memory_search`, `memory_symbols`, `memory_decisions`, `memory_files`
 - **Cross-session memory** -- knowledge persists and is injected at the start of every new session
 
-## Installation
+## Quick install
 
+The installer downloads the binary, adds it to your PATH, and configures Claude Code hooks automatically.
+
+**Linux / macOS:**
 ```bash
-# Build from source
-cargo install --path .
-
-# Or build manually
-cargo build --release
-# Binary at target/release/claude-rlm
+curl -fsSL https://raw.githubusercontent.com/dullfig/claude-rlm/main/install.sh | bash
 ```
 
-## Setup
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/dullfig/claude-rlm/main/install.ps1 | iex
+```
+
+**From source (any platform with Rust):**
+```bash
+cargo install --git https://github.com/dullfig/claude-rlm.git
+```
+
+If you install from source, you'll need to configure hooks manually (see below).
+
+## Manual setup
 
 ### 1. Configure hooks
 
