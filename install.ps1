@@ -152,6 +152,28 @@ function Configure-Hooks {
     }
 }
 
+# Sync plugin cache — copy installed binary into Claude Code's plugin cache
+function Sync-PluginCache {
+    $cacheBase = Join-Path $env:USERPROFILE ".claude\plugins\cache\dullfig-plugins\claude-rlm"
+    if (-not (Test-Path $cacheBase)) { return }
+
+    $src = Join-Path $InstallDir $Binary
+    if (-not (Test-Path $src)) { return }
+
+    Get-ChildItem -Path $cacheBase -Directory | ForEach-Object {
+        $binDir = Join-Path $_.FullName "bin"
+        if (Test-Path $binDir) {
+            $dest = Join-Path $binDir $Binary
+            try {
+                Copy-Item -Path $src -Destination $dest -Force
+                Write-Ok "Synced plugin cache: $dest"
+            } catch {
+                Write-Info "Could not sync plugin cache at $dest (may be in use)"
+            }
+        }
+    }
+}
+
 # Main
 Write-Host ""
 Write-Host "  ClaudeRLM Installer" -ForegroundColor Cyan
@@ -177,6 +199,7 @@ Write-Host ""
 
 Add-ToPath
 Configure-Hooks
+Sync-PluginCache
 
 Write-Host ""
 Write-Ok "Done! Start a Claude Code session to see it in action."

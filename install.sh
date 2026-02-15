@@ -190,6 +190,27 @@ check_path() {
     fi
 }
 
+# Sync plugin cache — copy installed binary into Claude Code's plugin cache
+sync_plugin_cache() {
+    local cache_base="${HOME}/.claude/plugins/cache/dullfig-plugins/claude-rlm"
+    [ -d "$cache_base" ] || return 0
+
+    local src="${INSTALL_DIR}/${BINARY}"
+    [ -f "$src" ] || return 0
+
+    for version_dir in "$cache_base"/*/; do
+        local bin_dir="${version_dir}bin"
+        if [ -d "$bin_dir" ]; then
+            if cp "$src" "${bin_dir}/${BINARY}" 2>/dev/null; then
+                chmod +x "${bin_dir}/${BINARY}"
+                ok "Synced plugin cache: ${bin_dir}/${BINARY}"
+            else
+                info "Could not sync plugin cache at ${bin_dir}/${BINARY}"
+            fi
+        fi
+    done
+}
+
 # Main
 main() {
     echo ""
@@ -217,6 +238,7 @@ main() {
     echo ""
 
     configure_hooks
+    sync_plugin_cache
     check_path
 
     echo ""

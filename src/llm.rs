@@ -257,9 +257,9 @@ pub fn global_config_path() -> Option<PathBuf> {
     }
 }
 
-/// Write a key-value pair into the `[llm]` section of the global config TOML.
+/// Write a key-value pair into a section of the global config TOML.
 /// Creates the file and parent directories if needed. Merges with existing content.
-pub fn write_global_config(key: &str, value: &str) -> Result<()> {
+pub fn write_global_config(section: &str, key: &str, value: toml::Value) -> Result<()> {
     let path = global_config_path()
         .ok_or_else(|| anyhow!("Cannot determine global config path"))?;
 
@@ -271,15 +271,15 @@ pub fn write_global_config(key: &str, value: &str) -> Result<()> {
         toml::Table::new()
     };
 
-    // Ensure [llm] table exists
-    let llm = doc
-        .entry("llm")
+    // Ensure [section] table exists
+    let sect = doc
+        .entry(section)
         .or_insert_with(|| toml::Value::Table(toml::Table::new()));
-    let llm_table = llm
+    let sect_table = sect
         .as_table_mut()
-        .ok_or_else(|| anyhow!("'llm' key in config is not a table"))?;
+        .ok_or_else(|| anyhow!("'{}' key in config is not a table", section))?;
 
-    llm_table.insert(key.to_string(), toml::Value::String(value.to_string()));
+    sect_table.insert(key.to_string(), value);
 
     // Write back
     if let Some(parent) = path.parent() {

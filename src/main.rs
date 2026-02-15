@@ -7,6 +7,7 @@ mod inject;
 mod llm;
 mod server;
 mod treesitter;
+mod update;
 mod watcher;
 
 use anyhow::Result;
@@ -73,7 +74,7 @@ enum Commands {
 enum ConfigAction {
     /// Set a configuration value
     Set {
-        /// The key to set (api-key, model, provider, base-url)
+        /// The key to set (api-key, model, provider, base-url, auto-update)
         key: String,
         /// The value to set
         value: String,
@@ -402,6 +403,12 @@ async fn run_server() -> Result<()> {
     tracing::info!("Starting ClaudeRLM MCP server");
     ensure_hooks_synced();
 
+    // Apply any previously staged update, then clean up old binary
+    if update::apply_staged_update() {
+        tracing::info!("Restarting with updated binary would take effect next launch");
+    }
+    update::cleanup_old_binary();
+
     // Open database in current project directory
     let project_dir = std::env::current_dir()?;
     let db = db::Db::open(&project_dir)?;
@@ -443,6 +450,9 @@ async fn run_server() -> Result<()> {
 
     // Start background task poller
     tokio::spawn(run_task_poller(db.clone(), project_dir));
+
+    // Check for updates in the background
+    update::spawn_update_check();
 
     // Spawn a watchdog that detects stdin close and force-exits.
     // rmcp's async stdin reader may not detect EOF promptly on Windows,
@@ -777,24 +787,52 @@ fn run_enable() -> Result<()> {
 fn run_config(action: ConfigAction) -> Result<()> {
     match action {
         ConfigAction::Set { key, value } => {
-            // Map CLI key names to TOML field names
-            let toml_key = match key.as_str() {
-                "api-key" | "api_key" => "api_key",
-                "model" => "model",
-                "provider" => "provider",
-                "base-url" | "base_url" => "base_url",
+            let path = llm::global_config_path().unwrap_or_default();
+
+            match key.as_str() {
+                // LLM config keys → [llm] section
+                "api-key" | "api_key" => {
+                    llm::write_global_config("llm", "api_key", toml::Value::String(value))?;
+                    eprintln!("[claude-rlm] Set llm.api_key in {}", path.display());
+                }
+                "model" => {
+                    llm::write_global_config("llm", "model", toml::Value::String(value))?;
+                    eprintln!("[claude-rlm] Set llm.model in {}", path.display());
+                }
+                "provider" => {
+                    llm::write_global_config("llm", "provider", toml::Value::String(value))?;
+                    eprintln!("[claude-rlm] Set llm.provider in {}", path.display());
+                }
+                "base-url" | "base_url" => {
+                    llm::write_global_config("llm", "base_url", toml::Value::String(value))?;
+                    eprintln!("[claude-rlm] Set llm.base_url in {}", path.display());
+                }
+
+                // Update config → [update] section
+                "auto-update" | "auto_update" => {
+                    let enabled = match value.as_str() {
+                        "true" | "1" | "on" => true,
+                        "false" | "0" | "off" => false,
+                        _ => anyhow::bail!(
+                            "Invalid value for auto-update: '{}'. Use true/false",
+                            value
+                        ),
+                    };
+                    llm::write_global_config(
+                        "update",
+                        "auto_update",
+                        toml::Value::Boolean(enabled),
+                    )?;
+                    eprintln!("[claude-rlm] Set update.auto_update = {} in {}", enabled, path.display());
+                }
+
                 other => {
                     anyhow::bail!(
-                        "Unknown config key '{}'. Valid keys: api-key, model, provider, base-url",
+                        "Unknown config key '{}'. Valid keys: api-key, model, provider, base-url, auto-update",
                         other
                     );
                 }
-            };
-
-            llm::write_global_config(toml_key, &value)?;
-
-            let path = llm::global_config_path().unwrap_or_default();
-            eprintln!("[claude-rlm] Set llm.{} in {}", toml_key, path.display());
+            }
 
             Ok(())
         }
