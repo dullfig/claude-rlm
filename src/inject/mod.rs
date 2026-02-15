@@ -11,9 +11,25 @@ const COMPACT_BUDGET: usize = 16_000;
 const STARTUP_BUDGET: usize = 8_000;
 
 const HEADER: &str = "\
-[ClaudeRLM] Project memory retrieved. You have context from previous sessions \
-including conversation history, code structure, and distilled knowledge. \
-Briefly inform the user that ClaudeRLM has loaded project memory.\n\n";
+[ClaudeRLM] You have persistent project memory powered by ClaudeRLM. \
+Everything in this session — conversations, code edits, file reads, and shell \
+commands — is being indexed automatically and persists across sessions.\n\
+\n\
+You have MCP tools to search your memory:\n\
+- memory_search: Find past discussions, code changes, and context\n\
+- memory_decisions: Recall why certain choices were made\n\
+- memory_files: See change history for specific files\n\
+- memory_symbols: Query code structure (functions, classes, structs)\n\
+\n\
+Use these proactively. Before starting a task, check if you've worked on \
+something similar before. When the user references past work, search your \
+memory instead of asking them to repeat themselves. When you encounter an \
+unfamiliar part of the codebase, check memory_symbols and memory_files for \
+prior context.\n\
+\n\
+Briefly greet the user and let them know project memory is loaded. Mention \
+any notable context from the sections below (recent sessions, knowledge, \
+git changes) if present.\n\n";
 
 /// Build context to inject at session startup.
 /// Includes: project structure, recent session summaries, active knowledge.

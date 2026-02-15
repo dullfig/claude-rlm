@@ -86,9 +86,11 @@ pub fn handle_start(input: &HookInput) -> Result<()> {
     }
 
     if !context.is_empty() {
-        // Output as JSON for Claude Code to consume as additionalContext
         let output = json!({
-            "additionalContext": context
+            "hookSpecificOutput": {
+                "hookEventName": "SessionStart",
+                "additionalContext": context
+            }
         });
         println!("{}", serde_json::to_string(&output)?);
     }
