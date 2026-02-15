@@ -2,12 +2,14 @@ use anyhow::Result;
 
 use crate::db::Db;
 use crate::hooks::{self, HookInput};
-use crate::indexer::code;
 
 /// Handle PreCompact hook: ensure all context is indexed before compaction.
 ///
 /// This is critical — compaction will compress/discard older context, so we
 /// need to make sure everything valuable has been captured in the index.
+///
+/// Re-indexing stale code files is delegated to a background task (picked up by
+/// the MCP server's task poller) so this hook returns quickly.
 pub fn handle(input: &HookInput) -> Result<()> {
     let project_dir = hooks::project_dir(input);
     let session_id = hooks::session_id(input);
@@ -15,33 +17,16 @@ pub fn handle(input: &HookInput) -> Result<()> {
 
     eprintln!("[claude-rlm] PreCompact: ensuring index is current for session {session_id}");
 
-    // 1. Re-index any stale code files (modified since last indexed)
-    let project_path = std::path::Path::new(&project_dir);
-    let stale = code::stale_files(&db, project_path)?;
-    if !stale.is_empty() {
-        eprintln!("[claude-rlm] PreCompact: re-indexing {} stale files", stale.len());
-        for path in &stale {
-            if path.exists() {
-                if let Err(e) = code::reindex_file(&db, path) {
-                    eprintln!("[claude-rlm] PreCompact: failed to reindex {}: {}", path.display(), e);
-                }
-            } else {
-                // File deleted — remove its symbols
-                let conn = db.conn();
-                let _ = conn.execute(
-                    "DELETE FROM symbols WHERE file_path = ?1",
-                    rusqlite::params![path.to_string_lossy().as_ref()],
-                );
-            }
-        }
-    }
-
-    // 2. Generate a mid-session summary and store it as a turn
-    //    This gives us a compact representation of what's happened so far,
-    //    which survives compaction even if individual turns are lost.
+    // 1. Generate checkpoint summary — this is the critical part that
+    //    survives compaction. Must complete before compaction proceeds.
     generate_checkpoint_summary(&db, &session_id)?;
+    eprintln!("[claude-rlm] PreCompact: checkpoint saved");
 
-    eprintln!("[claude-rlm] PreCompact: indexing complete");
+    // 2. Enqueue stale-file re-indexing as a background task for the MCP server.
+    //    This avoids blocking compaction on potentially slow tree-sitter work.
+    crate::db::tasks::enqueue_task(&db, "reindex_stale", &project_dir, None)?;
+    eprintln!("[claude-rlm] PreCompact: enqueued reindex_stale task");
+
     Ok(())
 }
 

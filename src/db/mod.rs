@@ -1,5 +1,6 @@
 pub mod schema;
 pub mod search;
+pub mod tasks;
 
 use anyhow::Result;
 use rusqlite::Connection;

@@ -132,6 +132,20 @@ pub fn create_tables(conn: &Connection) -> Result<()> {
         CREATE TRIGGER IF NOT EXISTS knowledge_ad AFTER DELETE ON knowledge BEGIN
             DELETE FROM knowledge_fts WHERE rowid = old.id;
         END;
+
+        -- Background task queue (cross-process via SQLite)
+        CREATE TABLE IF NOT EXISTS background_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_type TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            project_dir TEXT NOT NULL,
+            payload TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            started_at TEXT,
+            completed_at TEXT,
+            error TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_bg_tasks_status ON background_tasks(status);
         ",
     )?;
     Ok(())

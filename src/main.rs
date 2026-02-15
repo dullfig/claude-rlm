@@ -225,6 +225,13 @@ async fn run_server() -> Result<()> {
     let project_dir = std::env::current_dir()?;
     let db = db::Db::open(&project_dir)?;
 
+    // Recover any tasks stuck in 'running' from a previous crash
+    match db::tasks::recover_stuck_tasks(&db) {
+        Ok(0) => {}
+        Ok(n) => tracing::info!("Recovered {} stuck background tasks", n),
+        Err(e) => tracing::warn!("Failed to recover stuck tasks: {}", e),
+    }
+
     // Run initial code indexing if needed
     if !indexer::code::has_index(&db)? {
         tracing::info!("No code index found, running initial scan...");
@@ -239,7 +246,7 @@ async fn run_server() -> Result<()> {
     }
 
     // Start background file watcher
-    let _watcher = match watcher::start_watcher(db.clone(), project_dir) {
+    let _watcher = match watcher::start_watcher(db.clone(), project_dir.clone()) {
         Ok(w) => {
             tracing::info!("Background file watcher started");
             Some(w)
@@ -249,6 +256,9 @@ async fn run_server() -> Result<()> {
             None
         }
     };
+
+    // Start background task poller
+    tokio::spawn(run_task_poller(db.clone(), project_dir));
 
     let server = server::ClaudeRlmServer::new(db);
 
@@ -261,6 +271,121 @@ async fn run_server() -> Result<()> {
 
     service.waiting().await?;
     Ok(())
+}
+
+/// Poll for background tasks and execute them.
+async fn run_task_poller(db: db::Db, project_dir: std::path::PathBuf) {
+    use tokio::time::{interval, Duration};
+
+    let mut poll_interval = interval(Duration::from_millis(300));
+    let mut prune_counter: u32 = 0;
+
+    loop {
+        poll_interval.tick().await;
+
+        // Prune old completed/failed tasks roughly every 30s (300ms * 100)
+        prune_counter += 1;
+        if prune_counter >= 100 {
+            prune_counter = 0;
+            let db2 = db.clone();
+            let _ = tokio::task::spawn_blocking(move || {
+                if let Err(e) = db::tasks::prune_old_tasks(&db2, 3600) {
+                    tracing::warn!("Failed to prune old tasks: {}", e);
+                }
+            })
+            .await;
+        }
+
+        // Try to claim and execute a task
+        let db2 = db.clone();
+        let project_dir2 = project_dir.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            let task = match db::tasks::claim_next_task(&db2) {
+                Ok(Some(t)) => t,
+                Ok(None) => return,
+                Err(e) => {
+                    tracing::warn!("Failed to claim task: {}", e);
+                    return;
+                }
+            };
+
+            tracing::info!(
+                "Executing background task #{}: {} (project: {})",
+                task.id,
+                task.task_type,
+                task.project_dir
+            );
+
+            match task.task_type.as_str() {
+                "reindex_stale" => execute_reindex_stale(&db2, &task, &project_dir2),
+                other => {
+                    let msg = format!("Unknown task type: {}", other);
+                    tracing::warn!("{}", msg);
+                    let _ = db::tasks::fail_task(&db2, task.id, &msg);
+                }
+            }
+        })
+        .await;
+
+        if let Err(e) = result {
+            tracing::warn!("Task executor panicked: {}", e);
+        }
+    }
+}
+
+/// Execute a `reindex_stale` background task.
+fn execute_reindex_stale(db: &db::Db, task: &db::tasks::BackgroundTask, project_dir: &std::path::Path) {
+    // Use the project_dir from the task if it differs (future-proofing),
+    // but fall back to the server's project_dir for the DB connection.
+    let target_dir = std::path::Path::new(&task.project_dir);
+    let scan_dir = if target_dir.exists() { target_dir } else { project_dir };
+
+    match indexer::code::stale_files(db, scan_dir) {
+        Ok(stale) => {
+            if stale.is_empty() {
+                tracing::info!("Task #{}: no stale files to reindex", task.id);
+                let _ = db::tasks::complete_task(db, task.id);
+                return;
+            }
+
+            tracing::info!("Task #{}: reindexing {} stale files", task.id, stale.len());
+            let mut reindexed = 0usize;
+            let mut failed = 0usize;
+
+            for path in &stale {
+                if path.exists() {
+                    match indexer::code::reindex_file(db, path) {
+                        Ok(_) => reindexed += 1,
+                        Err(e) => {
+                            tracing::warn!("Task #{}: failed to reindex {}: {}", task.id, path.display(), e);
+                            failed += 1;
+                        }
+                    }
+                } else {
+                    // File deleted — remove its symbols
+                    let conn = db.conn();
+                    let _ = conn.execute(
+                        "DELETE FROM symbols WHERE file_path = ?1",
+                        rusqlite::params![path.to_string_lossy().as_ref()],
+                    );
+                    reindexed += 1;
+                }
+            }
+
+            tracing::info!(
+                "Task #{}: reindex complete ({} ok, {} failed)",
+                task.id,
+                reindexed,
+                failed
+            );
+            let _ = db::tasks::complete_task(db, task.id);
+        }
+        Err(e) => {
+            let msg = format!("Failed to find stale files: {}", e);
+            tracing::warn!("Task #{}: {}", task.id, msg);
+            let _ = db::tasks::fail_task(db, task.id, &msg);
+        }
+    }
 }
 
 /// Path to the disable flag file.
