@@ -2,6 +2,7 @@ pub mod prompt;
 pub mod tool_use;
 pub mod compact;
 pub mod session;
+pub mod pre_tool_use;
 
 use anyhow::Result;
 use serde::Deserialize;

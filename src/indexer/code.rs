@@ -129,8 +129,8 @@ fn insert_symbol(
     sym: &ExtractedSymbol,
 ) -> Result<i64> {
     conn.execute(
-        "INSERT INTO symbols (file_path, name, kind, start_line, end_line, signature, doc_comment)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT INTO symbols (file_path, name, kind, start_line, end_line, signature, doc_comment, parent_name)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             file_path,
             sym.name,
@@ -139,6 +139,7 @@ fn insert_symbol(
             sym.end_line as i64,
             sym.signature,
             sym.doc_comment,
+            sym.parent_name,
         ],
     )?;
     Ok(conn.last_insert_rowid())

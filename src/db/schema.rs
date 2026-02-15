@@ -1,7 +1,7 @@
 use anyhow::Result;
 use rusqlite::Connection;
 
-/// Create all tables and FTS indexes.
+/// Create all tables and FTS indexes, then run forward migrations.
 pub fn create_tables(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "
@@ -70,6 +70,7 @@ pub fn create_tables(conn: &Connection) -> Result<()> {
             parent_id INTEGER REFERENCES symbols(id),
             signature TEXT,
             doc_comment TEXT,
+            parent_name TEXT,
             last_indexed TEXT DEFAULT (datetime('now'))
         );
 
@@ -174,5 +175,16 @@ pub fn create_tables(conn: &Connection) -> Result<()> {
         );
         ",
     )?;
+
+    // Forward migrations for existing databases
+    migrate_add_column(conn, "symbols", "parent_name", "TEXT");
+
     Ok(())
+}
+
+/// Add a column to an existing table, ignoring errors if it already exists.
+fn migrate_add_column(conn: &Connection, table: &str, column: &str, col_type: &str) {
+    let sql = format!("ALTER TABLE {} ADD COLUMN {} {}", table, column, col_type);
+    // Ignore "duplicate column name" errors from SQLite
+    let _ = conn.execute_batch(&sql);
 }

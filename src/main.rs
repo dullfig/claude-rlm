@@ -41,6 +41,9 @@ enum Commands {
     /// Handle session start (SessionStart hook)
     SessionStart,
 
+    /// Handle pre-tool-use (PreToolUse hook)
+    PreToolUse,
+
     /// Handle session end (SessionEnd hook)
     SessionEnd {
         /// Trigger knowledge distillation
@@ -83,6 +86,10 @@ async fn main() -> Result<()> {
         Some(Commands::PreCompact) => run_hook(|| {
             let input = hooks::read_hook_input()?;
             hooks::compact::handle(&input)
+        }),
+        Some(Commands::PreToolUse) => run_hook(|| {
+            let input = hooks::read_hook_input()?;
+            hooks::pre_tool_use::handle(&input)
         }),
         Some(Commands::SessionStart) => run_hook(|| {
             let input = hooks::read_hook_input()?;

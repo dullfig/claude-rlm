@@ -254,7 +254,7 @@ impl ClaudeRlmServer {
             let conn = db.conn();
             let kind_filter = params.kind.as_deref().unwrap_or("%");
             let mut stmt = conn.prepare(
-                "SELECT file_path, name, kind, start_line, end_line, signature
+                "SELECT file_path, name, kind, start_line, end_line, signature, parent_name
                  FROM symbols
                  WHERE name LIKE ?1 AND kind LIKE ?2
                  ORDER BY file_path, start_line
@@ -271,13 +271,18 @@ impl ClaudeRlmServer {
                         let start_line: i64 = row.get(3)?;
                         let end_line: i64 = row.get(4)?;
                         let signature: Option<String> = row.get(5)?;
+                        let parent_name: Option<String> = row.get(6)?;
 
+                        let qualified_name = match parent_name {
+                            Some(ref p) if !p.is_empty() => format!("{}::{}", p, name),
+                            _ => name,
+                        };
                         let sig_str = signature
                             .map(|s| format!(" - `{}`", s))
                             .unwrap_or_default();
                         Ok(format!(
                             "- {} `{}` at {}:{}-{}{}",
-                            kind, name, file_path, start_line, end_line, sig_str
+                            kind, qualified_name, file_path, start_line, end_line, sig_str
                         ))
                     },
                 )?
