@@ -34,10 +34,21 @@ git changes) if present.\n\n";
 
 /// Build context to inject at session startup.
 /// Includes: project structure, recent session summaries, active knowledge.
+/// Also checks for a version-updated marker and injects a notice if present.
 pub fn build_startup_context(db: &Db) -> Result<String> {
     let conn = db.conn();
     let mut parts: Vec<String> = vec![HEADER.to_string()];
     let mut budget_remaining = STARTUP_BUDGET - HEADER.len();
+
+    // Check if the binary was updated in a previous session
+    if let Some(version) = crate::update::check_version_updated() {
+        let notice = format!(
+            "**ClaudeRLM has been updated to v{}. This new version takes effect this session. Please let the user know.**\n\n",
+            version
+        );
+        budget_remaining = budget_remaining.saturating_sub(notice.len());
+        parts.push(notice);
+    }
 
     // 0. Active plan (highest priority — crash recovery)
     if let Ok(Some(plan)) = plans::active_plan(&db) {

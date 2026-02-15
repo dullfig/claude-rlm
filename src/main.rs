@@ -403,11 +403,11 @@ async fn run_server() -> Result<()> {
     tracing::info!("Starting ClaudeRLM MCP server");
     ensure_hooks_synced();
 
-    // Apply any previously staged update, then clean up old binary
+    // Apply any previously staged update (migration from old versions), then clean up
     if update::apply_staged_update() {
         tracing::info!("Restarting with updated binary would take effect next launch");
     }
-    update::cleanup_old_binary();
+    update::cleanup_old_files();
 
     // Open database in current project directory
     let project_dir = std::env::current_dir()?;

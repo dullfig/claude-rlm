@@ -42,14 +42,19 @@ jobs:
       - name: Package (Unix)
         if: runner.os != 'Windows'
         run: |
-          cd target/${{ matrix.target }}/release
-          tar czf ../../../claude-rlm-${{ matrix.target }}.tar.gz ${{ matrix.artifact }}
+          mkdir -p staging/hooks
+          cp target/${{ matrix.target }}/release/${{ matrix.artifact }} staging/
+          cp hooks/hooks.json staging/hooks/
+          cd staging
+          tar czf ../claude-rlm-${{ matrix.target }}.tar.gz ${{ matrix.artifact }} hooks/hooks.json
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         run: |
-          cd target/${{ matrix.target }}/release
-          Compress-Archive -Path ${{ matrix.artifact }} -DestinationPath ../../../claude-rlm-${{ matrix.target }}.zip
+          New-Item -ItemType Directory -Path staging/hooks -Force
+          Copy-Item target/${{ matrix.target }}/release/${{ matrix.artifact }} staging/
+          Copy-Item hooks/hooks.json staging/hooks/
+          Compress-Archive -Path staging/* -DestinationPath claude-rlm-${{ matrix.target }}.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
