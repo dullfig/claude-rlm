@@ -324,9 +324,12 @@ fn ensure_hooks_synced() {
             changed = true;
         }
 
-        // Append our current entries
+        // Append our current entries, resolving ${CLAUDE_PLUGIN_ROOT} to absolute path
+        let root_str = plugin_root.to_string_lossy();
         for entry in our_arr {
-            existing_arr.push(entry.clone());
+            let mut entry = entry.clone();
+            resolve_plugin_root(&mut entry, &root_str);
+            existing_arr.push(entry);
             changed = true;
         }
     }
@@ -345,6 +348,26 @@ fn ensure_hooks_synced() {
             Err(e) => tracing::warn!("Failed to write hooks.json: {}", e),
         },
         Err(e) => tracing::warn!("Failed to serialize hooks.json: {}", e),
+    }
+}
+
+/// Recursively resolve `${CLAUDE_PLUGIN_ROOT}` in all string values.
+fn resolve_plugin_root(value: &mut serde_json::Value, root: &str) {
+    match value {
+        serde_json::Value::String(s) if s.contains("${CLAUDE_PLUGIN_ROOT}") => {
+            *s = s.replace("${CLAUDE_PLUGIN_ROOT}", root);
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr {
+                resolve_plugin_root(v, root);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for v in map.values_mut() {
+                resolve_plugin_root(v, root);
+            }
+        }
+        _ => {}
     }
 }
 
