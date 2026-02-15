@@ -269,8 +269,16 @@ async fn run_server() -> Result<()> {
             eprintln!("Error starting ClaudeRLM server: {}", e);
         })?;
 
-    service.waiting().await?;
-    Ok(())
+    // Wait for the MCP service to finish.
+    match service.waiting().await {
+        Ok(reason) => tracing::info!("MCP service stopped: {:?}", reason),
+        Err(e) => tracing::info!("MCP service stopped with join error: {}", e),
+    }
+
+    // Force-exit immediately. Tokio runtime shutdown can hang waiting for
+    // spawn_blocking tasks (file watcher, task poller). Claude Code kills
+    // MCP servers that don't exit promptly and reports them as failed.
+    std::process::exit(0);
 }
 
 /// Poll for background tasks and execute them.
