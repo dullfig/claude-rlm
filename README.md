@@ -33,7 +33,8 @@ In practice, Claude Code [hooks](https://docs.anthropic.com/en/docs/claude-code/
 Install as a Claude Code plugin for one-command setup with automatic binary management:
 
 ```
-/plugin install claude-rlm@dullfig-plugins
+/plugin marketplace add dullfig/claude-plugins
+/plugin install claude-rlm
 ```
 
 The binary is downloaded automatically on first session start. No PATH configuration needed.
@@ -68,7 +69,7 @@ If you install manually, you'll need to configure hooks yourself (see Manual hoo
 
 ### Migrating from manual install to plugin
 
-1. Install the plugin: `/plugin install claude-rlm@dullfig-plugins`
+1. Install the plugin: `/plugin marketplace add dullfig/claude-plugins` then `/plugin install claude-rlm`
 2. Remove old hooks from `~/.claude/settings.json` (any entries referencing `claude-rlm`)
 3. Optionally remove the old binary from `~/.local/bin/claude-rlm` or `%LOCALAPPDATA%\Programs\claude-rlm\`
 

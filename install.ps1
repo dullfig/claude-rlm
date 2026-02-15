@@ -1,5 +1,6 @@
 # DEPRECATED: Use the Claude Code plugin instead:
-#   /plugin install claude-rlm@dullfig-plugins
+#   /plugin marketplace add dullfig/claude-plugins
+#   /plugin install claude-rlm
 # This standalone installer will be removed in a future version.
 
 # ClaudeRLM installer for Windows
