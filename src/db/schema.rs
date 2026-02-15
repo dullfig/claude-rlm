@@ -146,6 +146,32 @@ pub fn create_tables(conn: &Connection) -> Result<()> {
             error TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_bg_tasks_status ON background_tasks(status);
+
+        -- Plans (tracked implementation plans for crash recovery)
+        CREATE TABLE IF NOT EXISTS plans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL REFERENCES sessions(id),
+            plan_file_path TEXT NOT NULL,
+            title TEXT,
+            content TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'created',
+            target_files TEXT,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now')),
+            completed_at TEXT,
+            superseded_by INTEGER REFERENCES plans(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_plans_status ON plans(status);
+
+        -- Plan progress (file edits while a plan is active)
+        CREATE TABLE IF NOT EXISTS plan_progress (
+            plan_id INTEGER NOT NULL REFERENCES plans(id),
+            file_path TEXT NOT NULL,
+            edit_count INTEGER NOT NULL DEFAULT 1,
+            first_edited TEXT DEFAULT (datetime('now')),
+            last_edited TEXT DEFAULT (datetime('now')),
+            PRIMARY KEY (plan_id, file_path)
+        );
         ",
     )?;
     Ok(())

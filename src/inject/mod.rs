@@ -4,6 +4,7 @@ use anyhow::Result;
 
 use crate::db::Db;
 use crate::db::search;
+use crate::indexer::plans;
 
 /// Maximum characters for injected context.
 /// ~4 chars per token, aim for ~4000 tokens = 16000 chars.
@@ -37,6 +38,13 @@ pub fn build_startup_context(db: &Db) -> Result<String> {
     let conn = db.conn();
     let mut parts: Vec<String> = vec![HEADER.to_string()];
     let mut budget_remaining = STARTUP_BUDGET - HEADER.len();
+
+    // 0. Active plan (highest priority — crash recovery)
+    if let Ok(Some(plan)) = plans::active_plan(&db) {
+        let section = format_plan_section(&plan, budget_remaining);
+        budget_remaining = budget_remaining.saturating_sub(section.len());
+        parts.push(section);
+    }
 
     // 1. Codebase map (symbols grouped by file) or fallback to stats
     let map_section = format_codebase_map(&conn, &db.project_dir(), budget_remaining / 2)?;
@@ -152,6 +160,11 @@ pub fn build_startup_context(db: &Db) -> Result<String> {
 pub fn build_compact_context(db: &Db, session_id: &str) -> Result<String> {
     let conn = db.conn();
     let mut parts: Vec<String> = vec![HEADER.to_string()];
+
+    // Active plan (must survive compaction)
+    if let Ok(Some(plan)) = plans::active_plan(&db) {
+        parts.push(format_plan_section(&plan, COMPACT_BUDGET / 4));
+    }
 
     // Get the active file set for file-affinity scoring
     let active_files = search::active_files(&conn, session_id, 20)?;
@@ -349,4 +362,52 @@ fn capitalize(s: &str) -> String {
         None => String::new(),
         Some(c) => c.to_uppercase().to_string() + chars.as_str(),
     }
+}
+
+/// Format an active plan for injection into startup/compact context.
+fn format_plan_section(plan: &plans::PlanInfo, budget: usize) -> String {
+    let title = plan.title.as_deref().unwrap_or("Untitled Plan");
+    let mut section = format!(
+        "## Active Plan: {} [{}]\n\
+         Plan file: {}\n\
+         Created: {} | Updated: {}\n",
+        title, plan.status, plan.plan_file_path, plan.created_at, plan.updated_at,
+    );
+
+    // Progress files
+    if !plan.progress.is_empty() {
+        section.push_str("\nFiles edited:\n");
+        for p in &plan.progress {
+            section.push_str(&format!("- {} ({} edits)\n", p.file_path, p.edit_count));
+        }
+    }
+
+    // Target file completion ratio
+    if !plan.target_files.is_empty() {
+        let touched = plan
+            .progress
+            .iter()
+            .filter(|p| {
+                plan.target_files.iter().any(|t| {
+                    p.file_path.ends_with(t) || t.ends_with(&p.file_path)
+                })
+            })
+            .count();
+        section.push_str(&format!(
+            "\nTarget progress: {}/{} files ({:.0}%)\n",
+            touched,
+            plan.target_files.len(),
+            touched as f64 / plan.target_files.len() as f64 * 100.0,
+        ));
+    }
+
+    // Plan content (truncated)
+    let content_budget = budget.saturating_sub(section.len()).min(2000);
+    if content_budget > 100 {
+        section.push_str("\nPlan content:\n");
+        section.push_str(&truncate(&plan.content, content_budget));
+        section.push('\n');
+    }
+
+    section
 }

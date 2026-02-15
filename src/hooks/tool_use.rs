@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::db::Db;
 use crate::hooks::{self, HookInput};
-use crate::indexer::{code, conversation};
+use crate::indexer::{code, conversation, plans};
 
 /// Handle PostToolUse for Edit/Write tools.
 pub fn handle_edit(input: &HookInput) -> Result<()> {
@@ -51,6 +51,31 @@ pub fn handle_edit(input: &HookInput) -> Result<()> {
     if path.exists() {
         if let Err(e) = code::reindex_file(&db, path) {
             tracing::warn!("Failed to reindex {}: {}", file_path, e);
+        }
+    }
+
+    // Plan tracking: detect plan file writes and source file edits
+    if plans::is_plan_file(file_path) {
+        let content = if tool_name == "Write" {
+            tool_input
+                .as_ref()
+                .and_then(|v| v.get("content"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string()
+        } else {
+            // Edit tool — read from disk (file already written by Claude Code)
+            std::fs::read_to_string(file_path).unwrap_or_default()
+        };
+        if !content.is_empty() {
+            if let Err(e) = plans::upsert_plan(&db, &session_id, file_path, &content) {
+                tracing::warn!("Failed to upsert plan: {}", e);
+            }
+        }
+    } else {
+        // Source file edit — record as plan progress if active plan exists
+        if let Err(e) = plans::record_progress(&db, &session_id, file_path) {
+            tracing::warn!("Failed to record plan progress: {}", e);
         }
     }
 

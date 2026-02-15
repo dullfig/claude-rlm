@@ -3,7 +3,7 @@ use serde_json::json;
 
 use crate::db::Db;
 use crate::hooks::{self, HookInput};
-use crate::indexer::{code, conversation, files, git};
+use crate::indexer::{code, conversation, files, git, plans};
 use crate::inject;
 
 /// Handle SessionStart hook.
@@ -73,10 +73,16 @@ pub fn handle_start(input: &HookInput) -> Result<()> {
             [], |row| row.get(0)
         ).unwrap_or(0);
 
+        let active_plans: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM plans WHERE status IN ('created', 'in_progress')",
+            [], |row| row.get(0)
+        ).unwrap_or(0);
+
         let mut parts = Vec::new();
         if sessions > 0 { parts.push(format!("{} sessions", sessions)); }
         if symbols > 0 { parts.push(format!("{} symbols", symbols)); }
         if knowledge > 0 { parts.push(format!("{} knowledge", knowledge)); }
+        if active_plans > 0 { parts.push(format!("{} active plan(s)", active_plans)); }
 
         if parts.is_empty() {
             eprintln!("[ClaudeRLM] Project memory initialized");
@@ -112,6 +118,14 @@ pub fn handle_end(input: &HookInput) -> Result<()> {
     // The server polls every 300ms, so it should exit before Claude Code
     // resorts to TerminateProcess.
     crate::db::tasks::enqueue_task(&db, "shutdown", &project_dir, None)?;
+
+    // Evaluate plan completion before ending session
+    if let Err(e) = plans::evaluate_completion(&db, &session_id) {
+        eprintln!("[claude-rlm] Plan evaluation failed: {}", e);
+    }
+    if let Err(e) = plans::abandon_stale_plans(&db, 7) {
+        eprintln!("[claude-rlm] Stale plan cleanup failed: {}", e);
+    }
 
     // Queue distillation for the next session's MCP server
     crate::db::tasks::enqueue_task(&db, "distill_session", &project_dir, Some(&session_id))?;
