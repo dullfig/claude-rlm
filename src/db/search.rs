@@ -2,6 +2,23 @@ use anyhow::Result;
 use rusqlite::Connection;
 use serde::Serialize;
 
+/// Sanitize a user query for SQLite FTS5.
+///
+/// FTS5 treats characters like `-`, `*`, `OR`, `AND`, `NOT` as operators.
+/// We quote each token with double quotes so they're treated as literals,
+/// then join with spaces (implicit AND).
+fn sanitize_fts_query(query: &str) -> String {
+    query
+        .split_whitespace()
+        .map(|token| {
+            // Strip any existing quotes, then wrap in double quotes
+            let clean = token.replace('"', "");
+            format!("\"{}\"", clean)
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// A search result from the turns FTS index.
 #[derive(Debug, Serialize)]
 pub struct TurnSearchResult {
@@ -69,7 +86,7 @@ pub fn search_turns(
 
     // Build params dynamically
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-    params.push(Box::new(query.to_string()));
+    params.push(Box::new(sanitize_fts_query(query)));
     if let Some(sid) = session_id {
         params.push(Box::new(sid.to_string()));
     }
@@ -147,7 +164,7 @@ pub fn search_knowledge(
     let mut stmt = conn.prepare(sql)?;
 
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-    params.push(Box::new(query.to_string()));
+    params.push(Box::new(sanitize_fts_query(query)));
     if let Some(cat) = category {
         params.push(Box::new(cat.to_string()));
     }
