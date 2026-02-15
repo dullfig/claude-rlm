@@ -69,6 +69,17 @@ pub fn fail_task(db: &Db, task_id: i64, error: &str) -> Result<()> {
     Ok(())
 }
 
+/// Remove any pending shutdown tasks. Called on startup so a leftover
+/// shutdown signal from a previous session doesn't kill the new server.
+pub fn clear_shutdown_tasks(db: &Db) -> Result<()> {
+    let conn = db.conn();
+    conn.execute(
+        "DELETE FROM background_tasks WHERE task_type = 'shutdown' AND status = 'pending'",
+        [],
+    )?;
+    Ok(())
+}
+
 /// Recover tasks stuck in 'running' state (e.g. from a crash).
 /// Resets them back to 'pending' so they'll be retried.
 pub fn recover_stuck_tasks(db: &Db) -> Result<u64> {

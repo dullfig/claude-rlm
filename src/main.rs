@@ -225,7 +225,10 @@ async fn run_server() -> Result<()> {
     let project_dir = std::env::current_dir()?;
     let db = db::Db::open(&project_dir)?;
 
-    // Recover any tasks stuck in 'running' from a previous crash
+    // Clear any leftover shutdown tasks from a previous session so we don't
+    // immediately exit, then recover stuck tasks from crashes.
+    db::tasks::clear_shutdown_tasks(&db)?;
+
     match db::tasks::recover_stuck_tasks(&db) {
         Ok(0) => {}
         Ok(n) => tracing::info!("Recovered {} stuck background tasks", n),
@@ -260,6 +263,11 @@ async fn run_server() -> Result<()> {
     // Start background task poller
     tokio::spawn(run_task_poller(db.clone(), project_dir));
 
+    // Spawn a watchdog that detects stdin close and force-exits.
+    // rmcp's async stdin reader may not detect EOF promptly on Windows,
+    // causing the process to hang until Claude Code force-kills it (error).
+    spawn_stdin_watchdog();
+
     let server = server::ClaudeRlmServer::new(db);
 
     let service = server
@@ -279,6 +287,56 @@ async fn run_server() -> Result<()> {
     // spawn_blocking tasks (file watcher, task poller). Claude Code kills
     // MCP servers that don't exit promptly and reports them as failed.
     std::process::exit(0);
+}
+
+/// Spawn a background OS thread that monitors stdin and force-exits when it closes.
+/// On Windows, rmcp's async stdin reader may not detect EOF promptly, causing the
+/// process to hang past Claude Code's shutdown timeout and get force-killed (error).
+#[cfg(windows)]
+fn spawn_stdin_watchdog() {
+    use std::os::windows::io::AsRawHandle;
+
+    extern "system" {
+        fn PeekNamedPipe(
+            h_named_pipe: isize,
+            lp_buffer: *mut u8,
+            n_buffer_size: u32,
+            lp_bytes_read: *mut u32,
+            lp_total_bytes_avail: *mut u32,
+            lp_bytes_left_this_message: *mut u32,
+        ) -> i32;
+    }
+
+    // Grab the raw handle on the main thread before spawning
+    let handle = std::io::stdin().as_raw_handle() as isize;
+
+    std::thread::spawn(move || {
+        // Let the server finish starting before we begin polling
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            let mut available: u32 = 0;
+            let result = unsafe {
+                PeekNamedPipe(
+                    handle,
+                    std::ptr::null_mut(),
+                    0,
+                    std::ptr::null_mut(),
+                    &mut available,
+                    std::ptr::null_mut(),
+                )
+            };
+            if result == 0 {
+                // PeekNamedPipe failed → pipe is broken/closed by parent
+                std::process::exit(0);
+            }
+        }
+    });
+}
+
+#[cfg(not(windows))]
+fn spawn_stdin_watchdog() {
+    // On Unix, rmcp detects stdin EOF reliably. No watchdog needed.
 }
 
 /// Poll for background tasks and execute them.
@@ -325,7 +383,13 @@ async fn run_task_poller(db: db::Db, project_dir: std::path::PathBuf) {
             );
 
             match task.task_type.as_str() {
+                "shutdown" => {
+                    tracing::info!("Task #{}: shutdown signal received, exiting", task.id);
+                    let _ = db::tasks::complete_task(&db2, task.id);
+                    std::process::exit(0);
+                }
                 "reindex_stale" => execute_reindex_stale(&db2, &task, &project_dir2),
+                "distill_session" => execute_distill_session(&db2, &task),
                 other => {
                     let msg = format!("Unknown task type: {}", other);
                     tracing::warn!("{}", msg);
@@ -394,6 +458,104 @@ fn execute_reindex_stale(db: &db::Db, task: &db::tasks::BackgroundTask, project_
             let _ = db::tasks::fail_task(db, task.id, &msg);
         }
     }
+}
+
+/// Execute a `distill_session` background task.
+/// Runs knowledge distillation and generates a session summary, then updates
+/// the session record. This work was deferred from the SessionEnd hook so
+/// Claude Code can shut down instantly.
+fn execute_distill_session(db: &db::Db, task: &db::tasks::BackgroundTask) {
+    let session_id = match &task.payload {
+        Some(id) => id.as_str(),
+        None => {
+            let _ = db::tasks::fail_task(db, task.id, "Missing session_id in payload");
+            return;
+        }
+    };
+
+    // 1. Distill knowledge
+    match indexer::distill::distill_session_smart(db, session_id) {
+        Ok(stats) => {
+            if stats.extracted > 0 {
+                tracing::info!(
+                    "Task #{}: distilled {} knowledge entries from session {}",
+                    task.id, stats.extracted, session_id
+                );
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Task #{}: knowledge distillation failed: {}", task.id, e);
+        }
+    }
+
+    // 2. Generate session summary and update the session record
+    match generate_session_summary(db, session_id) {
+        Ok(Some(summary)) => {
+            let conn = db.conn();
+            let _ = conn.execute(
+                "UPDATE sessions SET summary = ?2 WHERE id = ?1",
+                rusqlite::params![session_id, summary],
+            );
+        }
+        Ok(None) => {}
+        Err(e) => {
+            tracing::warn!("Task #{}: summary generation failed: {}", task.id, e);
+        }
+    }
+
+    let _ = db::tasks::complete_task(db, task.id);
+}
+
+/// Generate a basic session summary from the turn history.
+fn generate_session_summary(db: &db::Db, session_id: &str) -> anyhow::Result<Option<String>> {
+    let conn = db.conn();
+
+    let mut stmt = conn.prepare(
+        "SELECT content FROM turns
+         WHERE session_id = ?1 AND turn_type = 'request'
+         ORDER BY turn_number ASC
+         LIMIT 20",
+    )?;
+
+    let requests: Vec<String> = stmt
+        .query_map([session_id], |row| row.get(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    if requests.is_empty() {
+        return Ok(None);
+    }
+
+    let edit_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM turns WHERE session_id = ?1 AND turn_type = 'code_edit'",
+        [session_id],
+        |row| row.get(0),
+    )?;
+
+    let file_count: i64 = conn.query_row(
+        "SELECT COUNT(DISTINCT file_path) FROM turn_files
+         JOIN turns ON turns.id = turn_files.turn_id
+         WHERE turns.session_id = ?1",
+        [session_id],
+        |row| row.get(0),
+    )?;
+
+    let mut summary = String::from("User requests:\n");
+    for (i, req) in requests.iter().enumerate() {
+        let truncated = if req.len() > 200 {
+            let end = req.floor_char_boundary(200);
+            format!("{}...", &req[..end])
+        } else {
+            req.clone()
+        };
+        summary.push_str(&format!("{}. {}\n", i + 1, truncated));
+    }
+    summary.push_str(&format!(
+        "\nStats: {} code edits across {} files",
+        edit_count, file_count
+    ));
+
+    Ok(Some(summary))
 }
 
 /// Path to the disable flag file.

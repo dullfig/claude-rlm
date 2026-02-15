@@ -3,7 +3,7 @@ use serde_json::json;
 
 use crate::db::Db;
 use crate::hooks::{self, HookInput};
-use crate::indexer::{code, conversation, distill, files, git};
+use crate::indexer::{code, conversation, files, git};
 use crate::inject;
 
 /// Handle SessionStart hook.
@@ -98,84 +98,27 @@ pub fn handle_start(input: &HookInput) -> Result<()> {
     Ok(())
 }
 
-/// Handle SessionEnd hook: mark session as ended, distill knowledge.
+/// Handle SessionEnd hook: signal the MCP server to exit, then queue
+/// deferred work. Returns instantly so Claude Code can proceed with shutdown.
+/// The MCP server picks up the shutdown signal within ~300ms and exits
+/// cleanly before Claude Code force-kills it.
 pub fn handle_end(input: &HookInput) -> Result<()> {
     let project_dir = hooks::project_dir(input);
     let session_id = hooks::session_id(input);
 
     let db = Db::open(std::path::Path::new(&project_dir))?;
 
-    // 1. Distill knowledge from the session (LLM if configured, else heuristic)
-    match distill::distill_session_smart(&db, &session_id) {
-        Ok(stats) => {
-            if stats.extracted > 0 {
-                eprintln!(
-                    "[claude-rlm] Distilled {} knowledge entries from session {}",
-                    stats.extracted, session_id
-                );
-            }
-        }
-        Err(e) => eprintln!("[claude-rlm] Knowledge distillation failed: {}", e),
-    }
+    // Signal the MCP server to exit gracefully via the task queue.
+    // The server polls every 300ms, so it should exit before Claude Code
+    // resorts to TerminateProcess.
+    crate::db::tasks::enqueue_task(&db, "shutdown", &project_dir, None)?;
 
-    // 2. Generate summary and mark session as ended
-    let summary = generate_session_summary(&db, &session_id)?;
-    conversation::end_session(&db, &session_id, summary.as_deref())?;
+    // Queue distillation for the next session's MCP server
+    crate::db::tasks::enqueue_task(&db, "distill_session", &project_dir, Some(&session_id))?;
+
+    // Mark session as ended
+    conversation::end_session(&db, &session_id, None)?;
 
     Ok(())
 }
 
-/// Generate a basic session summary from the turn history.
-fn generate_session_summary(db: &Db, session_id: &str) -> Result<Option<String>> {
-    let conn = db.conn();
-
-    // Get request turns for this session
-    let mut stmt = conn.prepare(
-        "SELECT content FROM turns
-         WHERE session_id = ?1 AND turn_type = 'request'
-         ORDER BY turn_number ASC
-         LIMIT 20",
-    )?;
-
-    let requests: Vec<String> = stmt
-        .query_map([session_id], |row| row.get(0))?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    if requests.is_empty() {
-        return Ok(None);
-    }
-
-    // Get count of different turn types
-    let edit_count: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM turns WHERE session_id = ?1 AND turn_type = 'code_edit'",
-        [session_id],
-        |row| row.get(0),
-    )?;
-
-    let file_count: i64 = conn.query_row(
-        "SELECT COUNT(DISTINCT file_path) FROM turn_files
-         JOIN turns ON turns.id = turn_files.turn_id
-         WHERE turns.session_id = ?1",
-        [session_id],
-        |row| row.get(0),
-    )?;
-
-    // Build summary from user requests
-    let mut summary = String::from("User requests:\n");
-    for (i, req) in requests.iter().enumerate() {
-        let truncated = if req.len() > 200 {
-            let end = req.floor_char_boundary(200);
-            format!("{}...", &req[..end])
-        } else {
-            req.clone()
-        };
-        summary.push_str(&format!("{}. {}\n", i + 1, truncated));
-    }
-    summary.push_str(&format!(
-        "\nStats: {} code edits across {} files",
-        edit_count, file_count
-    ));
-
-    Ok(Some(summary))
-}
