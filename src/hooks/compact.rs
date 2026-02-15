@@ -15,6 +15,8 @@ pub fn handle(input: &HookInput) -> Result<()> {
     let session_id = hooks::session_id(input);
     let db = Db::open(std::path::Path::new(&project_dir))?;
 
+    hooks::log_hook(&db, input, "PreCompact", "");
+
     eprintln!("[claude-rlm] PreCompact: ensuring index is current for session {session_id}");
 
     // 1. Generate checkpoint summary — this is the critical part that

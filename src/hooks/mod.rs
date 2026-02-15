@@ -67,3 +67,19 @@ pub fn session_id(input: &HookInput) -> String {
         .clone()
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
 }
+
+/// Log a hook invocation to the hook_log table.
+/// Fire-and-forget — hook logging must never break a hook.
+pub fn log_hook(db: &crate::db::Db, input: &HookInput, hook_event: &str, detail: &str) {
+    let conn = db.conn();
+    let _ = conn.execute(
+        "INSERT INTO hook_log (hook_event, tool_name, detail, session_id)
+         VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![
+            hook_event,
+            input.tool_name.as_deref(),
+            if detail.is_empty() { None } else { Some(detail) },
+            input.session_id.as_deref(),
+        ],
+    );
+}

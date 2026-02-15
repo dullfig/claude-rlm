@@ -231,6 +231,26 @@ fn run_status() -> Result<()> {
         }
     }
 
+    // Recent hook activity (last 24h)
+    let mut stmt = conn.prepare(
+        "SELECT hook_event, COUNT(*) FROM hook_log
+         WHERE created_at > datetime('now', '-1 day')
+         GROUP BY hook_event
+         ORDER BY COUNT(*) DESC",
+    )?;
+    let hook_counts: Vec<(String, i64)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
+    if !hook_counts.is_empty() {
+        println!("\nRecent hooks (last 24h):");
+        for (event, count) in &hook_counts {
+            println!("  {:<20} {} invocations", event, count);
+        }
+    } else {
+        println!("\nRecent hooks (last 24h): none");
+    }
+
     Ok(())
 }
 

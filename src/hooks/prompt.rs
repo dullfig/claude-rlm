@@ -17,6 +17,9 @@ pub fn handle(input: &HookInput) -> Result<()> {
         .as_deref()
         .unwrap_or("[empty prompt]");
 
+    let detail: String = content.chars().take(100).collect();
+    hooks::log_hook(&db, input, "UserPromptSubmit", &detail);
+
     conversation::index_turn(
         &db,
         &session_id,

@@ -23,6 +23,8 @@ pub fn handle_edit(input: &HookInput) -> Result<()> {
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
 
+    hooks::log_hook(&db, input, "PostToolUse", &format!("edit: {}", file_path));
+
     // Build a concise content description
     let content = if let Some(ti) = tool_input {
         format_edit_content(tool_name, ti)
@@ -97,6 +99,8 @@ pub fn handle_read(input: &HookInput) -> Result<()> {
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
 
+    hooks::log_hook(&db, input, "PostToolUse", &format!("read: {}", file_path));
+
     let content = format!("Read file: {file_path}");
 
     conversation::index_turn(
@@ -126,6 +130,9 @@ pub fn handle_bash(input: &HookInput) -> Result<()> {
         .and_then(|v| v.get("command"))
         .and_then(|v| v.as_str())
         .unwrap_or("[unknown command]");
+
+    let cmd_detail: String = command.chars().take(100).collect();
+    hooks::log_hook(&db, input, "PostToolUse", &format!("bash: {}", cmd_detail));
 
     // Extract output: tool_response can be a string or {"stdout": "...", ...}
     let output = input

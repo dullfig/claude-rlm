@@ -17,6 +17,8 @@ pub fn handle_start(input: &HookInput) -> Result<()> {
     let db = Db::open(std::path::Path::new(&project_dir))?;
     conversation::ensure_session(&db, &session_id, &project_dir)?;
 
+    hooks::log_hook(&db, input, "SessionStart", &format!("source: {}", source));
+
     // Catch up on git changes since last session
     if source == "startup" {
         match git::catchup(&db, std::path::Path::new(&project_dir), &session_id) {
@@ -113,6 +115,8 @@ pub fn handle_end(input: &HookInput) -> Result<()> {
     let session_id = hooks::session_id(input);
 
     let db = Db::open(std::path::Path::new(&project_dir))?;
+
+    hooks::log_hook(&db, input, "SessionEnd", "");
 
     // Signal the MCP server to exit gracefully via the task queue.
     // The server polls every 300ms, so it should exit before Claude Code

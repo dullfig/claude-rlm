@@ -173,6 +173,16 @@ pub fn create_tables(conn: &Connection) -> Result<()> {
             last_edited TEXT DEFAULT (datetime('now')),
             PRIMARY KEY (plan_id, file_path)
         );
+
+        -- Hook invocation log (always-on, append-only)
+        CREATE TABLE IF NOT EXISTS hook_log (
+            id INTEGER PRIMARY KEY,
+            hook_event TEXT NOT NULL,
+            tool_name TEXT,
+            detail TEXT,
+            session_id TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
         ",
     )?;
 
