@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 mod db;
 mod hooks;
 mod indexer;
@@ -59,6 +61,23 @@ enum Commands {
 
     /// Re-enable hooks after disable
     Enable,
+
+    /// Manage configuration
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConfigAction {
+    /// Set a configuration value
+    Set {
+        /// The key to set (api-key, model, provider, base-url)
+        key: String,
+        /// The value to set
+        value: String,
+    },
 }
 
 #[tokio::main]
@@ -102,6 +121,7 @@ async fn main() -> Result<()> {
         Some(Commands::Status) => run_status(),
         Some(Commands::Disable) => run_disable(),
         Some(Commands::Enable) => run_enable(),
+        Some(Commands::Config { action }) => run_config(action),
     }
 }
 
@@ -708,6 +728,34 @@ fn run_enable() -> Result<()> {
         eprintln!("claude-rlm is already enabled.");
     }
     Ok(())
+}
+
+/// Handle `config set` subcommand.
+fn run_config(action: ConfigAction) -> Result<()> {
+    match action {
+        ConfigAction::Set { key, value } => {
+            // Map CLI key names to TOML field names
+            let toml_key = match key.as_str() {
+                "api-key" | "api_key" => "api_key",
+                "model" => "model",
+                "provider" => "provider",
+                "base-url" | "base_url" => "base_url",
+                other => {
+                    anyhow::bail!(
+                        "Unknown config key '{}'. Valid keys: api-key, model, provider, base-url",
+                        other
+                    );
+                }
+            };
+
+            llm::write_global_config(toml_key, &value)?;
+
+            let path = llm::global_config_path().unwrap_or_default();
+            eprintln!("[claude-rlm] Set llm.{} in {}", toml_key, path.display());
+
+            Ok(())
+        }
+    }
 }
 
 /// Run a hook handler, catching errors and panics.

@@ -54,6 +54,7 @@ impl LlmConfig {
         let file_cfg = load_config_file().unwrap_or_default();
 
         let api_key = file_cfg.llm.api_key
+            .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
             .or_else(|| std::env::var("CONTEXTMEM_LLM_API_KEY").ok());
 
         let provider_str = file_cfg.llm.provider
@@ -87,6 +88,9 @@ impl LlmConfig {
         // For Anthropic, require an API key
         // For OpenAI-compat (Ollama), API key is optional (local)
         if provider == Provider::Anthropic && api_key.is_none() {
+            eprintln!(
+                "[claude-rlm] No LLM API key found. Set ANTHROPIC_API_KEY or run: claude-rlm config set api-key <key>"
+            );
             return None;
         }
 
@@ -238,6 +242,52 @@ fn config_file_paths() -> Vec<PathBuf> {
     }
 
     paths
+}
+
+/// Return the path to the global config file.
+pub fn global_config_path() -> Option<PathBuf> {
+    if cfg!(windows) {
+        std::env::var("APPDATA")
+            .ok()
+            .map(|d| PathBuf::from(d).join("claude-rlm").join("config.toml"))
+    } else {
+        std::env::var("HOME")
+            .ok()
+            .map(|d| PathBuf::from(d).join(".config").join("claude-rlm").join("config.toml"))
+    }
+}
+
+/// Write a key-value pair into the `[llm]` section of the global config TOML.
+/// Creates the file and parent directories if needed. Merges with existing content.
+pub fn write_global_config(key: &str, value: &str) -> Result<()> {
+    let path = global_config_path()
+        .ok_or_else(|| anyhow!("Cannot determine global config path"))?;
+
+    // Load existing file or start fresh
+    let mut doc: toml::Table = if path.exists() {
+        let contents = std::fs::read_to_string(&path)?;
+        contents.parse().unwrap_or_default()
+    } else {
+        toml::Table::new()
+    };
+
+    // Ensure [llm] table exists
+    let llm = doc
+        .entry("llm")
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+    let llm_table = llm
+        .as_table_mut()
+        .ok_or_else(|| anyhow!("'llm' key in config is not a table"))?;
+
+    llm_table.insert(key.to_string(), toml::Value::String(value.to_string()));
+
+    // Write back
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&path, doc.to_string())?;
+
+    Ok(())
 }
 
 // --- Anthropic API types ---
