@@ -53,6 +53,15 @@ impl Db {
         self.conn.lock().expect("db mutex poisoned")
     }
 
+    /// Get the project directory (parent of `.claude/`).
+    pub fn project_dir(&self) -> String {
+        self.path
+            .parent() // .claude/
+            .and_then(|p| p.parent()) // project_dir
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default()
+    }
+
     #[allow(dead_code)]
     pub fn path(&self) -> &Path {
         &self.path

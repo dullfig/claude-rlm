@@ -38,36 +38,11 @@ pub fn build_startup_context(db: &Db) -> Result<String> {
     let mut parts: Vec<String> = vec![HEADER.to_string()];
     let mut budget_remaining = STARTUP_BUDGET - HEADER.len();
 
-    // 1. Project structure summary (if code has been indexed)
-    let structure = search::project_structure(&conn)?;
-    if structure.total_symbols > 0 {
-        let mut section = format!(
-            "## Project Structure ({} symbols across {} files)\n",
-            structure.total_symbols, structure.total_files
-        );
-
-        // Symbol breakdown
-        let kinds_str: Vec<String> = structure
-            .symbol_kinds
-            .iter()
-            .take(6)
-            .map(|(k, c)| format!("{} {}", c, k))
-            .collect();
-        section.push_str(&format!("Symbols: {}\n", kinds_str.join(", ")));
-
-        // Directory breakdown
-        if !structure.directories.is_empty() {
-            let dirs_str: Vec<String> = structure
-                .directories
-                .iter()
-                .take(8)
-                .map(|(d, c)| format!("{} ({})", d, c))
-                .collect();
-            section.push_str(&format!("Directories: {}\n", dirs_str.join(", ")));
-        }
-
-        budget_remaining = budget_remaining.saturating_sub(section.len());
-        parts.push(section);
+    // 1. Codebase map (symbols grouped by file) or fallback to stats
+    let map_section = format_codebase_map(&conn, &db.project_dir(), budget_remaining / 2)?;
+    if !map_section.is_empty() {
+        budget_remaining = budget_remaining.saturating_sub(map_section.len());
+        parts.push(map_section);
     }
 
     // 2. Recent session summaries (last 3)
@@ -245,6 +220,118 @@ pub fn build_compact_context(db: &Db, session_id: &str) -> Result<String> {
     }
 
     Ok(parts.join("\n"))
+}
+
+/// Format a codebase map showing symbols grouped by file.
+/// Falls back to aggregate stats if no symbols are indexed.
+fn format_codebase_map(
+    conn: &rusqlite::Connection,
+    project_dir: &str,
+    budget: usize,
+) -> Result<String> {
+    let structure = search::project_structure(conn)?;
+    if structure.total_symbols == 0 {
+        return Ok(String::new());
+    }
+
+    let map = search::codebase_map(conn)?;
+
+    // Header line with aggregate stats
+    let kinds_str: Vec<String> = structure
+        .symbol_kinds
+        .iter()
+        .take(6)
+        .map(|(k, c)| format!("{} {}", c, k))
+        .collect();
+    let dirs_str: Vec<String> = structure
+        .directories
+        .iter()
+        .take(8)
+        .map(|(d, c)| format!("{} ({})", d, c))
+        .collect();
+
+    let mut section = format!(
+        "## Project Structure ({} symbols across {} files)\n",
+        structure.total_symbols, structure.total_files
+    );
+    section.push_str(&format!("Symbols: {}\n", kinds_str.join(", ")));
+    if !dirs_str.is_empty() {
+        section.push_str(&format!("Directories: {}\n", dirs_str.join(", ")));
+    }
+
+    if map.is_empty() {
+        return Ok(section);
+    }
+
+    section.push('\n');
+
+    // Normalize project_dir for prefix stripping
+    let prefix = project_dir.replace('\\', "/");
+    let prefix = prefix.trim_end_matches('/');
+
+    // Deduplicate entries that map to the same relative path
+    let mut seen = std::collections::HashSet::new();
+    let mut deduped: Vec<&search::FileMapEntry> = Vec::new();
+    for entry in &map {
+        let rel = make_relative(&entry.file_path, prefix);
+        if seen.insert(rel) {
+            deduped.push(entry);
+        }
+    }
+
+    let mut files_shown = 0;
+    let total_files = deduped.len();
+
+    for entry in &deduped {
+        let rel_path = make_relative(&entry.file_path, prefix);
+        let sym_strs: Vec<String> = entry
+            .symbols
+            .iter()
+            .map(|s| format_symbol(&s.name, &s.kind))
+            .collect();
+        let mut line = format!("{}\n  {}", rel_path, sym_strs.join(", "));
+        if entry.truncated {
+            line.push_str(", ...");
+        }
+        line.push('\n');
+
+        if section.len() + line.len() > budget {
+            break;
+        }
+        section.push_str(&line);
+        files_shown += 1;
+    }
+
+    let remaining = total_files - files_shown;
+    if remaining > 0 {
+        section.push_str(&format!("...and {} more files\n", remaining));
+    }
+
+    Ok(section)
+}
+
+/// Format a symbol name with its kind prefix.
+fn format_symbol(name: &str, kind: &str) -> String {
+    match kind {
+        "struct" => format!("struct {}", name),
+        "enum" => format!("enum {}", name),
+        "trait" => format!("trait {}", name),
+        "function" => format!("fn {}()", name),
+        "const" => format!("const {}", name),
+        "impl" => format!("impl {}", name),
+        "type" => format!("type {}", name),
+        _ => name.to_string(),
+    }
+}
+
+/// Strip the project directory prefix and normalize to forward slashes.
+fn make_relative(path: &str, prefix: &str) -> String {
+    let normalized = path.replace('\\', "/");
+    normalized
+        .strip_prefix(prefix)
+        .unwrap_or(&normalized)
+        .trim_start_matches('/')
+        .to_string()
 }
 
 fn truncate(s: &str, max: usize) -> String {

@@ -276,6 +276,107 @@ pub fn session_turns(
     Ok(results)
 }
 
+/// A symbol entry in the codebase map.
+#[derive(Debug)]
+pub struct SymbolMapEntry {
+    pub name: String,
+    pub kind: String,
+}
+
+/// A file entry in the codebase map, with its symbols.
+#[derive(Debug)]
+pub struct FileMapEntry {
+    pub file_path: String,
+    pub symbols: Vec<SymbolMapEntry>,
+    pub truncated: bool,
+    pub score: u32,
+}
+
+/// Build a codebase map: symbols grouped by file, ranked by importance.
+///
+/// Filters out imports and variables, skips redundant `impl Foo` when
+/// `struct Foo` exists in the same file, and caps symbols per file.
+pub fn codebase_map(conn: &Connection) -> Result<Vec<FileMapEntry>> {
+    let mut stmt = conn.prepare(
+        "SELECT file_path, name, kind
+         FROM symbols
+         WHERE kind NOT IN ('import', 'variable')
+         ORDER BY file_path, start_line",
+    )?;
+
+    let rows: Vec<(String, String, String)> = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    if rows.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Group by file
+    let mut files: Vec<FileMapEntry> = Vec::new();
+    let mut current_path = String::new();
+    let mut current_symbols: Vec<SymbolMapEntry> = Vec::new();
+
+    for (path, name, kind) in &rows {
+        if path != &current_path {
+            if !current_path.is_empty() {
+                files.push(finish_file_entry(
+                    std::mem::take(&mut current_path),
+                    std::mem::take(&mut current_symbols),
+                ));
+            }
+            current_path = path.clone();
+        }
+        current_symbols.push(SymbolMapEntry {
+            name: name.clone(),
+            kind: kind.clone(),
+        });
+    }
+    if !current_path.is_empty() {
+        files.push(finish_file_entry(current_path, current_symbols));
+    }
+
+    // Sort by score descending (most important files first)
+    files.sort_by(|a, b| b.score.cmp(&a.score));
+
+    Ok(files)
+}
+
+/// Score a file and deduplicate/cap its symbols.
+fn finish_file_entry(file_path: String, mut symbols: Vec<SymbolMapEntry>) -> FileMapEntry {
+    // Collect struct/enum/trait names to filter redundant impl blocks
+    let type_names: std::collections::HashSet<String> = symbols
+        .iter()
+        .filter(|s| matches!(s.kind.as_str(), "struct" | "enum" | "trait"))
+        .map(|s| s.name.clone())
+        .collect();
+
+    // Remove `impl Foo` when `struct/enum/trait Foo` exists
+    symbols.retain(|s| !(s.kind == "impl" && type_names.contains(&s.name)));
+
+    // Score: structs/traits/enums=3, functions=2, rest=1
+    let score: u32 = symbols
+        .iter()
+        .map(|s| match s.kind.as_str() {
+            "struct" | "trait" | "enum" => 3,
+            "function" => 2,
+            _ => 1,
+        })
+        .sum();
+
+    const MAX_SYMBOLS: usize = 8;
+    let truncated = symbols.len() > MAX_SYMBOLS;
+    symbols.truncate(MAX_SYMBOLS);
+
+    FileMapEntry {
+        file_path,
+        symbols,
+        truncated,
+        score,
+    }
+}
+
 /// Get files actively being worked on in a session (edited/written, most recent first).
 pub fn active_files(conn: &Connection, session_id: &str, limit: usize) -> Result<Vec<String>> {
     let mut stmt = conn.prepare(
