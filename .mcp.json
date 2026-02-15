@@ -3,7 +3,10 @@
     "claude-rlm": {
       "type": "stdio",
       "command": "${CLAUDE_PLUGIN_ROOT}/bin/claude-rlm-serve",
-      "args": []
+      "args": [],
+      "env": {
+        "CLAUDE_PLUGIN_ROOT": "."
+      }
     }
   }
 }
