@@ -498,3 +498,83 @@ pub fn file_history(
     }
     Ok(results)
 }
+
+/// A symbol matched by keyword search.
+#[derive(Debug)]
+pub struct SymbolMatch {
+    pub file_path: String,
+    pub name: String,
+    pub kind: String,
+    pub start_line: i64,
+    pub end_line: i64,
+    pub signature: Option<String>,
+    pub parent_name: Option<String>,
+    pub doc_comment: Option<String>,
+}
+
+/// Search symbols by keywords across name, signature, doc_comment, and file_path.
+///
+/// Each keyword generates OR conditions across all columns.
+/// Multiple keywords are OR'd together (any keyword match counts).
+pub fn search_symbols_by_keywords(
+    conn: &Connection,
+    keywords: &[String],
+    limit: usize,
+) -> Result<Vec<SymbolMatch>> {
+    if keywords.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut conditions = Vec::new();
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    let mut param_num = 1;
+
+    for kw in keywords {
+        let pattern = format!("%{}%", kw);
+        conditions.push(format!(
+            "(name LIKE ?{0} OR file_path LIKE ?{0} \
+             OR COALESCE(signature, '') LIKE ?{0} \
+             OR COALESCE(doc_comment, '') LIKE ?{0})",
+            param_num
+        ));
+        params.push(Box::new(pattern));
+        param_num += 1;
+    }
+
+    let sql = format!(
+        "SELECT file_path, name, kind, start_line, end_line, \
+                signature, parent_name, doc_comment \
+         FROM symbols \
+         WHERE kind NOT IN ('import', 'variable') \
+           AND ({}) \
+         ORDER BY file_path, start_line \
+         LIMIT ?{}",
+        conditions.join(" OR "),
+        param_num,
+    );
+
+    params.push(Box::new(limit as i64));
+
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+        params.iter().map(|p| p.as_ref()).collect();
+
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(param_refs.as_slice(), |row| {
+        Ok(SymbolMatch {
+            file_path: row.get(0)?,
+            name: row.get(1)?,
+            kind: row.get(2)?,
+            start_line: row.get(3)?,
+            end_line: row.get(4)?,
+            signature: row.get(5)?,
+            parent_name: row.get(6)?,
+            doc_comment: row.get(7)?,
+        })
+    })?;
+
+    let mut results = Vec::new();
+    for row in rows {
+        results.push(row?);
+    }
+    Ok(results)
+}

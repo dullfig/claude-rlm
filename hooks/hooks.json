@@ -61,7 +61,7 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/bin/claude-rlm pre-tool-use",
-            "timeout": 2
+            "timeout": 10
           }
         ]
       }
