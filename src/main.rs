@@ -214,6 +214,116 @@ fn run_status() -> Result<()> {
     Ok(())
 }
 
+/// Ensure the installed hooks.json contains this binary's hooks.
+///
+/// When deployed as a plugin, the hooks.json in the plugin cache can get
+/// out of sync with the binary (e.g., new hook types added). This merges
+/// our hooks into the installed file, preserving entries from other plugins.
+/// Takes effect on the next session (Claude Code reads hooks at init).
+fn ensure_hooks_synced() {
+    let plugin_root = match std::env::var("CLAUDE_PLUGIN_ROOT").ok() {
+        Some(p) if p != "." && !p.is_empty() => std::path::PathBuf::from(p),
+        _ => return, // Dev mode
+    };
+
+    const CANONICAL: &str = include_str!("../hooks/hooks.json");
+
+    let ours: serde_json::Value = match serde_json::from_str(CANONICAL) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!("Embedded hooks.json is invalid: {}", e);
+            return;
+        }
+    };
+
+    let hooks_path = plugin_root.join("hooks").join("hooks.json");
+
+    // Load existing file, or start with an empty hooks object
+    let mut installed: serde_json::Value =
+        std::fs::read_to_string(&hooks_path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_else(|| serde_json::json!({"hooks": {}}));
+
+    let our_hooks = match ours.get("hooks").and_then(|h| h.as_object()) {
+        Some(h) => h,
+        None => return,
+    };
+    let installed_hooks = installed
+        .as_object_mut()
+        .and_then(|o| {
+            o.entry("hooks")
+                .or_insert_with(|| serde_json::json!({}))
+                .as_object_mut()
+        });
+    let installed_hooks = match installed_hooks {
+        Some(h) => h,
+        None => return,
+    };
+
+    let mut changed = false;
+
+    for (hook_type, our_entries) in our_hooks {
+        let our_arr = match our_entries.as_array() {
+            Some(a) => a,
+            None => continue,
+        };
+
+        let existing = installed_hooks
+            .entry(hook_type)
+            .or_insert_with(|| serde_json::json!([]));
+        let existing_arr = match existing.as_array_mut() {
+            Some(a) => a,
+            None => continue,
+        };
+
+        // Remove stale claude-rlm entries
+        let before = existing_arr.len();
+        existing_arr.retain(|entry| !is_claude_rlm_entry(entry));
+        if existing_arr.len() != before {
+            changed = true;
+        }
+
+        // Append our current entries
+        for entry in our_arr {
+            existing_arr.push(entry.clone());
+            changed = true;
+        }
+    }
+
+    if !changed {
+        return;
+    }
+
+    if let Err(e) = std::fs::create_dir_all(hooks_path.parent().unwrap()) {
+        tracing::warn!("Failed to create hooks dir: {}", e);
+        return;
+    }
+    match serde_json::to_string_pretty(&installed) {
+        Ok(json) => match std::fs::write(&hooks_path, json) {
+            Ok(()) => tracing::info!("Merged hooks.json with binary's hooks"),
+            Err(e) => tracing::warn!("Failed to write hooks.json: {}", e),
+        },
+        Err(e) => tracing::warn!("Failed to serialize hooks.json: {}", e),
+    }
+}
+
+/// Check if a hook entry belongs to claude-rlm (has a command containing "claude-rlm").
+fn is_claude_rlm_entry(entry: &serde_json::Value) -> bool {
+    entry
+        .get("hooks")
+        .and_then(|h| h.as_array())
+        .map(|hooks| {
+            hooks.iter().any(|h| {
+                h.get("command")
+                    .and_then(|c| c.as_str())
+                    .map(|c| c.contains("claude-rlm"))
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
+}
+
 /// Run the MCP server over stdio.
 async fn run_server() -> Result<()> {
     // Log to stderr to keep stdout clean for MCP protocol
@@ -227,6 +337,7 @@ async fn run_server() -> Result<()> {
         .init();
 
     tracing::info!("Starting ClaudeRLM MCP server");
+    ensure_hooks_synced();
 
     // Open database in current project directory
     let project_dir = std::env::current_dir()?;
